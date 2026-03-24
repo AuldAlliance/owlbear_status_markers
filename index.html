@@ -2,83 +2,132 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script src="https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/lib/index.min.js"></script>
+    <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
-        body { background: #1e1e23; color: white; font-family: sans-serif; padding: 15px; text-align: center; }
-        #testBtn { 
-            padding: 15px; width: 100%; cursor: pointer; 
-            background: #2196F3; color: white; border: none; 
-            border-radius: 4px; font-weight: bold;
+        body { 
+            background: rgba(30, 30, 35, 0.95); color: white; 
+            font-family: sans-serif; padding: 12px; margin: 0;
         }
-        #log { 
-            font-size: 11px; color: #00ff00; margin-top: 10px; 
-            background: #000; padding: 10px; border-radius: 4px;
-            text-align: left; min-height: 60px; white-space: pre-wrap;
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button {
+            cursor: pointer; border-radius: 4px; border: 1px solid #444;
+            background: #222; color: #888; padding: 12px;
+            font-size: 10px; font-weight: bold; text-transform: uppercase;
         }
+        button.active { background: #2196F3; color: white; border-color: white; }
+        #status { font-size: 10px; color: #aaa; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-    <button id="testBtn">SPAWN RED DOT</button>
-    <div id="log">Status: Initializing...</div>
+<div id="status">SELECT A TOKEN</div>
+<div class="grid">
+    <button data-code="BLN" data-color="#ff4444">Blinded</button>
+    <button data-code="POI" data-color="#00ff88">Poisoned</button>
+    <button data-code="PRN" data-color="#ffcc00">Prone</button>
+    <button data-code="STU" data-color="#00ccff">Stunned</button>
+</div>
 
-<script>
-    // Access OBR from the window object directly
-    const log = (msg) => { 
-        document.getElementById('log').innerText += "\n> " + msg; 
-        console.log(msg);
-    };
+<script type="module">
+import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
 
-    // This function handles the click
-    async function spawnDot() {
-        try {
-            const isReady = await OBR.isReady;
-            if (!isReady) {
-                log("Error: SDK not ready yet.");
-                return;
-            }
+const ID = "com.auldalliance.quadrant-status";
 
-            const selection = await OBR.player.getSelection();
-            if (!selection || selection.length === 0) {
-                alert("Select a token on the map first!");
-                return;
-            }
+// --- 1. TOGGLE METADATA ---
+async function toggleCondition(code, color) {
+    const selection = await OBR.player.getSelection();
+    if (!selection?.length) return;
 
-            const items = await OBR.scene.items.getItems();
-            const targetToken = items.find(i => i.id === selection[0]);
+    await OBR.scene.items.updateItems(selection, (items) => {
+        for (let item of items) {
+            const meta = item.metadata[ID] || { conditions: [] };
+            const conditions = Array.isArray(meta.conditions) ? [...meta.conditions] : [];
+            
+            const idx = conditions.findIndex(c => c.code === code);
+            if (idx > -1) conditions.splice(idx, 1);
+            else conditions.push({ code, color });
 
-            // Using the global builder syntax
-            const circle = OBR.buildShape()
-                .shapeType("CIRCLE")
-                .width(100)
-                .height(100)
-                .fillColor("red")
-                .position(targetToken.position)
-                .attachedTo(targetToken.id)
-                .layer("ATTACHMENT")
-                .locked(true)
-                .build();
-
-            await OBR.scene.items.addItems([circle]);
-            log("SUCCESS: Dot added to " + (targetToken.name || "Token"));
-
-        } catch (e) {
-            log("ERROR: " + e.message);
+            item.metadata[ID] = { ...meta, conditions };
         }
+    });
+}
+
+// --- 2. RENDER ENGINE (The "Colored Rings" way) ---
+async function sync(items) {
+    const selection = await OBR.player.getSelection();
+    const activeToken = items.find(i => i.id === selection?.[0]);
+
+    // Update UI Buttons
+    document.getElementById('status').innerText = activeToken ? `EDITING: ${activeToken.name}` : "SELECT A TOKEN";
+    document.querySelectorAll('button').forEach(btn => {
+        const code = btn.getAttribute('data-code');
+        const active = activeToken?.metadata[ID]?.conditions?.some(c => c.code === code);
+        btn.className = active ? 'active' : '';
+    });
+
+    // Handle Labels
+    const existingLabels = items.filter(i => i.metadata[ID]?.isLabel);
+    const tokensWithData = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
+
+    let desiredIds = new Set();
+    let toAdd = [];
+
+    for (const token of tokensWithData) {
+        const conds = token.metadata[ID].conditions;
+        const size = (token.image?.width || 150) * (token.scale?.x || 1);
+        const offset = size / 3;
+
+        const positions = [
+            { x: -offset, y: -offset }, { x: offset, y: -offset },
+            { x: -offset, y: offset },  { x: offset, y: offset }
+        ];
+
+        conds.forEach((c, i) => {
+            const labelId = `${token.id}-${c.code}`;
+            desiredIds.add(labelId);
+
+            // If it doesn't exist yet, build it
+            if (!existingLabels.some(l => l.id === labelId)) {
+                const label = OBR.buildText()
+                    .id(labelId)
+                    .plainText(c.code)
+                    .fontSize(size / 6)
+                    .fillColor(c.color)
+                    .strokeColor("black")
+                    .strokeWidth(2)
+                    .position({
+                        x: token.position.x + positions[i % 4].x,
+                        y: token.position.y + positions[i % 4].y
+                    })
+                    .attachedTo(token.id)
+                    .layer("ATTACHMENT")
+                    .locked(true)
+                    .disableHit(true)
+                    .metadata({ [ID]: { isLabel: true } })
+                    .build();
+                toAdd.push(label);
+            }
+        });
     }
 
-    // Attach the click event
-    document.getElementById('testBtn').onclick = spawnDot;
+    // Cleanup labels that are no longer needed
+    const toDelete = existingLabels.filter(l => !desiredIds.has(l.id)).map(l => l.id);
+    if (toDelete.length) await OBR.scene.items.deleteItems(toDelete);
+    if (toAdd.length) await OBR.scene.items.addItems(toAdd);
+}
 
-    // Use a robust check for OBR readiness
-    const checkInterval = setInterval(() => {
-        if (window.OBR && window.OBR.isReady) {
-            clearInterval(checkInterval);
-            OBR.onReady(() => {
-                log("SDK Connected! Version: " + OBR.VERSION);
-            });
-        }
-    }, 100);
+// --- 3. INIT ---
+OBR.onReady(() => {
+    document.querySelectorAll('button').forEach(btn => {
+        btn.onclick = () => toggleCondition(btn.dataset.code, btn.dataset.color);
+    });
+
+    OBR.scene.items.onChange(sync);
+    OBR.player.onChange(async () => {
+        const items = await OBR.scene.items.getItems();
+        sync(items);
+    });
+});
 </script>
 </body>
 </html>
