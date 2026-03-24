@@ -4,23 +4,23 @@
     <meta charset="UTF-8">
     <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
-        body { background: #1a1a1d; color: #eee; font-family: system-ui; padding: 10px; margin: 0; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        body { background: #1a1a1c; color: white; font-family: sans-serif; padding: 10px; margin: 0; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
         button { 
-            cursor: pointer; padding: 12px 5px; border: 1px solid #444; border-radius: 6px;
-            background: #2d2d30; color: #aaa; font-size: 11px; font-weight: bold; transition: 0.2s;
+            cursor: pointer; padding: 10px 2px; border: 1px solid #444; border-radius: 4px;
+            background: #2a2a2e; color: #888; font-size: 10px; font-weight: bold;
         }
-        button.active { background: #3498db; color: white; border-color: #5dade2; box-shadow: 0 0 10px rgba(52, 152, 219, 0.5); }
-        #status { font-size: 12px; color: #888; text-align: center; text-transform: uppercase; }
+        button.active { background: #2196F3; color: white; border-color: #fff; }
+        #status { font-size: 11px; color: #666; text-align: center; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="status">Select a Token</div>
+    <div id="status">SELECT A TOKEN</div>
     <div class="grid">
-        <button id="btn-BLN" onclick="window.toggle('BLN', '#e74c3c')">Blinded</button>
-        <button id="btn-POI" onclick="window.toggle('POI', '#2ecc71')">Poisoned</button>
-        <button id="btn-PRN" onclick="window.toggle('PRN', '#f1c40f')">Prone</button>
-        <button id="btn-STU" onclick="window.toggle('STU', '#9b59b6')">Stunned</button>
+        <button id="btn-BLN" onclick="window.toggle('BLN', '#ff4444')">Blinded</button>
+        <button id="btn-POI" onclick="window.toggle('POI', '#00ff88')">Poisoned</button>
+        <button id="btn-PRN" onclick="window.toggle('PRN', '#ffcc00')">Prone</button>
+        <button id="btn-STU" onclick="window.toggle('STU', '#00ccff')">Stunned</button>
     </div>
 
 <script type="module">
@@ -45,11 +45,11 @@
         const sel = await OBR.player.getSelection();
         const selectedId = sel?.[0];
         
-        // UI Update
+        // 1. UI Sync
         if (selectedId) {
             const active = items.find(i => i.id === selectedId);
             if (active) {
-                document.getElementById('status').innerText = (active.name || "Token");
+                document.getElementById('status').innerText = (active.name || "Token").toUpperCase();
                 const meta = active.metadata[ID] || { c: [] };
                 document.querySelectorAll('button').forEach(btn => {
                     btn.classList.toggle('active', meta.c.some(x => x.code === btn.id.split('-')[1]));
@@ -57,59 +57,63 @@
             }
         }
 
-        // Logic to draw/remove labels
-        const labelsOnMap = items.filter(i => i.metadata[ID]?.isLabel);
-        const tokensWithConditions = items.filter(i => i.metadata[ID]?.c?.length > 0);
-        const activeLabelIds = new Set();
-        const newLabels = [];
+        // 2. Map Render Logic (Using Shapes instead of Text for better reliability)
+        const myMarkers = items.filter(i => i.metadata[ID]?.isMarker);
+        const tokens = items.filter(i => i.metadata[ID]?.c?.length > 0);
+        const validIds = new Set();
+        const toAdd = [];
 
-        for (const t of tokensWithConditions) {
+        for (const t of tokens) {
             const conds = t.metadata[ID].c;
-            const size = (t.image?.width || 150); 
-            const offset = size * 0.35; // Position relative to center
-            const positions = [{x:-offset, y:-offset}, {x:offset, y:-offset}, {x:-offset, y:offset}, {x:offset, y:offset}];
+            const size = (t.image?.width || 150) * (t.scale?.x || 1);
+            const radius = size / 4.5; // Size of the marker
+            const off = size / 3;      // Distance from center
+
+            const pts = [{x:-off, y:-off}, {x:off, y:-off}, {x:-off, y:off}, {x:off, y:off}];
 
             conds.forEach((c, i) => {
-                const lid = `L-${t.id}-${c.code}`;
-                activeLabelIds.add(lid);
+                const mid = `M-${t.id}-${c.code}`;
+                validIds.add(mid);
 
-                if (!labelsOnMap.some(l => l.id === lid)) {
-                    const label = OBR.buildLabel()
-                        .id(lid)
-                        .plainText(c.code)
+                if (!myMarkers.some(m => m.id === mid)) {
+                    // We build a simple CIRCLE shape. It is much more robust than Text.
+                    const marker = OBR.buildShape()
+                        .id(mid)
+                        .shapeType("CIRCLE")
+                        .width(radius)
+                        .height(radius)
                         .fillColor(c.color)
                         .strokeColor("black")
-                        .position({ x: t.position.x + positions[i].x, y: t.position.y + positions[i].y })
+                        .strokeWidth(2)
+                        .position({ x: t.position.x + pts[i].x, y: t.position.y + pts[i].y })
                         .attachedTo(t.id)
-                        .layer("CHARACTER")
+                        .layer("ATTACHMENT")
                         .locked(true)
                         .disableHit(true)
-                        .metadata({ [ID]: { isLabel: true } })
+                        .metadata({ [ID]: { isMarker: true } })
                         .build();
-                    newLabels.push(label);
+                    toAdd.push(marker);
                 }
             });
         }
 
-        // Sync Scene
-        const toDelete = labelsOnMap.filter(l => !activeLabelIds.has(l.id)).map(l => l.id);
+        // 3. Scene Sync
+        const toDelete = myMarkers.filter(m => !validIds.has(m.id)).map(m => m.id);
         if (toDelete.length) await OBR.scene.items.deleteItems(toDelete);
-        if (newLabels.length) await OBR.scene.items.addItems(newLabels);
-        
-        // Movement/Rotation Fix
-        const toUpdate = labelsOnMap.filter(l => activeLabelIds.has(l.id));
+        if (toAdd.length) await OBR.scene.items.addItems(toAdd);
+
+        // 4. Position Update (Keeps markers attached during move)
+        const toUpdate = myMarkers.filter(m => validIds.has(m.id));
         if (toUpdate.length) {
-            await OBR.scene.items.updateItems(toUpdate.map(l => l.id), (itms) => {
-                itms.forEach(lbl => {
-                    const token = items.find(i => i.id === lbl.attachedTo);
-                    if (token) {
-                        const idx = token.metadata[ID].c.findIndex(c => `L-${token.id}-${c.code}` === lbl.id);
-                        const size = (token.image?.width || 150);
-                        const off = size * 0.35;
+            await OBR.scene.items.updateItems(toUpdate.map(m => m.id), (itms) => {
+                itms.forEach(m => {
+                    const parent = items.find(i => i.id === m.attachedTo);
+                    if (parent) {
+                        const idx = parent.metadata[ID].c.findIndex(c => `M-${parent.id}-${c.code}` === m.id);
+                        const size = (parent.image?.width || 150) * (parent.scale?.x || 1);
+                        const off = size / 3;
                         const pts = [{x:-off, y:-off}, {x:off, y:-off}, {x:-off, y:off}, {x:off, y:off}];
-                        if (idx !== -1) {
-                           lbl.position = { x: token.position.x + pts[idx].x, y: token.position.y + pts[idx].y };
-                        }
+                        m.position = { x: parent.position.x + pts[idx].x, y: parent.position.y + pts[idx].y };
                     }
                 });
             });
@@ -118,7 +122,7 @@
 
     OBR.onReady(() => {
         OBR.scene.items.onChange(sync);
-        OBR.player.onChange(async () => sync(await OBR.scene.items.getItems()));
+        OBR.player.onChange(async (p) => sync(await OBR.scene.items.getItems()));
     });
 </script>
 </body>
