@@ -4,156 +4,65 @@
     <meta charset="UTF-8">
     <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
-        html { background: transparent; }
-        body { 
-            background: rgba(30, 30, 35, 0.95);
-            color: white;
-            font-family: sans-serif;
-            padding: 12px;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-        }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-        button {
-            cursor: pointer;
-            border-radius: 4px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.05);
-            color: #888;
-            padding: 10px;
-            font-size: 10px;
-            font-weight: bold;
-        }
-        button.active { background: #2196F3; color: white; border-color: white; }
-        #status { font-size: 11px; color: #aaa; margin-bottom: 5px; }
+        body { background: #222; color: white; font-family: sans-serif; padding: 20px; }
+        button { padding: 15px; width: 100%; cursor: pointer; background: #444; color: white; border: none; border-radius: 4px; }
+        button:active { background: #666; }
+        #log { font-size: 10px; color: #00ff00; margin-top: 10px; background: #000; padding: 5px; height: 50px; overflow-y: auto; }
     </style>
 </head>
 <body>
 
-<div id="status">Select a Token</div>
-<div class="grid" id="controls">
-    <button data-code="BLN" data-color="#ff4444">BLINDED</button>
-    <button data-code="POI" data-color="#00ff88">POISON</button>
-    <button data-code="PRN" data-color="#ffcc00">PRONE</button>
-    <button data-code="FRI" data-color="#bb66ff">FEAR</button>
-    <button data-code="FIR" data-color="#ff8800">FIRE</button>
-    <button data-code="STU" data-color="#00ccff">STUNNED</button>
-</div>
+    <button id="testBtn">SPAWN TEST CIRCLE</button>
+    <div id="log">Status: Waiting for click...</div>
 
 <script type="module">
 import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
 
-const ID = "com.auldalliance.quadrant-status";
+const log = (msg) => { document.getElementById('log').innerText += "\n" + msg; };
 
-async function toggle(code, color) {
-    const selection = await OBR.player.getSelection();
-    if (!selection?.length) return;
-
-    await OBR.scene.items.updateItems(selection, (items) => {
-        for (let item of items) {
-            const meta = item.metadata[ID] || { conditions: [] };
-            const conditions = [...meta.conditions];
-            const idx = conditions.findIndex(c => c.code === code);
-
-            if (idx > -1) { conditions.splice(idx, 1); }
-            else { conditions.push({ code, color }); }
-
-            item.metadata[ID] = { ...meta, conditions };
+document.getElementById('testBtn').onclick = async () => {
+    try {
+        log("Checking selection...");
+        const selection = await OBR.player.getSelection();
+        
+        if (!selection || selection.length === 0) {
+            alert("Please select a token on the map first!");
+            return;
         }
-    });
-}
 
-async function renderLabels(items) {
-    const selection = await OBR.player.getSelection();
-    const selectedId = selection?.[0];
-    const activeToken = items.find(i => i.id === selectedId);
+        const targetId = selection[0];
+        const items = await OBR.scene.items.getItems();
+        const targetToken = items.find(i => i.id === targetId);
 
-    // 1. Update UI
-    document.getElementById('status').innerText = activeToken ? `Editing: ${activeToken.name}` : "Select a Token";
-    document.querySelectorAll('button').forEach(btn => {
-        const code = btn.getAttribute('data-code');
-        const isActive = activeToken?.metadata[ID]?.conditions?.some(c => c.code === code);
-        btn.className = isActive ? 'active' : '';
-    });
+        log("Building circle...");
+        // This is the most basic item OBR can render
+        const circle = OBR.buildShape()
+            .width(100)
+            .height(100)
+            .shapeType("CIRCLE")
+            .fillColor("red")
+            .fillOpacity(0.5)
+            .strokeColor("white")
+            .strokeWidth(4)
+            .position(targetToken.position) 
+            .layer("MOUNT") // Mount is high-visibility
+            .attachedTo(targetId)
+            .locked(false)
+            .build();
 
-    // 2. Clear/Create Labels
-    const allLabels = items.filter(i => i.metadata[ID]?.isLabel);
-    const tokensWithMeta = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
-    
-    let labelsToCreate = [];
-    let activeLabelIds = new Set();
+        log("Sending to OBR...");
+        await OBR.scene.items.addItems([circle]);
+        log("SUCCESS: Item added.");
 
-    for (const token of tokensWithMeta) {
-        const conds = token.metadata[ID].conditions;
-        // Simple offset math based on token size
-        const size = (token.image?.width || 150) * (token.scale?.x || 1);
-        const offset = size / 2.5;
-
-        const positions = [
-            { x: -offset, y: -offset }, { x: offset, y: -offset },
-            { x: -offset, y: offset },  { x: offset, y: offset }
-        ];
-
-        conds.forEach((c, index) => {
-            const labelId = `${token.id}-${c.code}`;
-            activeLabelIds.add(labelId);
-
-            const label = OBR.buildText()
-                .id(labelId)
-                .plainText(c.code)
-                .fontSize(size / 6)
-                .fillColor(c.color)
-                .strokeColor("black")
-                .strokeWidth(2)
-                .position({
-                    x: token.position.x + positions[index % 4].x,
-                    y: token.position.y + positions[index % 4].y
-                })
-                .layer("ATTACHMENT")
-                .attachedTo(token.id) // <--- THIS IS CRITICAL
-                .locked(true)
-                .disableHit(true)
-                .metadata({ [ID]: { isLabel: true } })
-                .build();
-            
-            labelsToCreate.push(label);
-        });
+    } catch (error) {
+        log("ERROR: " + error.message);
+        console.error(error);
+        alert("OBR Rejected the item: " + error.message);
     }
-
-    // Remove old ones
-    const toDelete = allLabels.filter(l => !activeLabelIds.has(l.id)).map(l => l.id);
-    if (toDelete.length) await OBR.scene.items.deleteItems(toDelete);
-
-    // Add new ones
-    const toAdd = labelsToCreate.filter(nl => !allLabels.some(el => el.id === nl.id));
-    if (toAdd.length) await OBR.scene.items.addItems(toAdd);
-
-    // Update existing (sync movement)
-    const toUpdate = labelsToCreate.filter(nl => allLabels.some(el => el.id === nl.id));
-    if (toUpdate.length) {
-        await OBR.scene.items.updateItems(toUpdate.map(l => l.id), (items) => {
-            items.forEach(item => {
-                const data = toUpdate.find(u => u.id === item.id);
-                item.position = data.position;
-                item.visible = true;
-            });
-        });
-    }
-}
+};
 
 OBR.onReady(() => {
-    // Button clicks
-    document.querySelectorAll('button').forEach(btn => {
-        btn.onclick = () => toggle(btn.dataset.code, btn.dataset.color);
-    });
-
-    // Listeners
-    OBR.scene.items.onChange(renderLabels);
-    OBR.player.onChange(async () => {
-        const items = await OBR.scene.items.getItems();
-        renderLabels(items);
-    });
+    log("SDK Ready.");
 });
 </script>
 </body>
