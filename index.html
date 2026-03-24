@@ -8,16 +8,11 @@
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         button { cursor: pointer; padding: 12px; background: #3c4043; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 11px; font-weight: bold; }
         button.active { background: #4285f4; color: white; border-color: white; }
-        #status { font-size: 12px; color: #9aa0a6; text-align: center; height: 20px; }
-        #debug-console { 
-            margin-top: auto; background: #000; color: #0f0; font-family: monospace; 
-            font-size: 10px; padding: 8px; border-radius: 4px; height: 100px; 
-            overflow-y: auto; border: 1px solid #333;
-        }
+        #debug-console { margin-top: auto; background: #000; color: #0f0; font-family: monospace; font-size: 10px; padding: 8px; border-radius: 4px; height: 120px; overflow-y: auto; border: 1px solid #333; }
     </style>
 </head>
 <body>
-    <div id="status">SELECT A TOKEN</div>
+    <div id="status" style="text-align:center; font-size:12px; color:#9aa0a6;">SELECT A TOKEN</div>
     <div class="grid">
         <button id="btn-BLN" onclick="window.toggle('BLN', '#ff4444')">Blinded</button>
         <button id="btn-POI" onclick="window.toggle('POI', '#00ff88')">Poisoned</button>
@@ -39,99 +34,97 @@
         logEl.scrollTop = logEl.scrollHeight;
     }
 
-    window.toggle = async (code, color) => {
-        const sel = await OBR.player.getSelection();
-        if (!sel?.length) { log("No selection"); return; }
+    // --- THE CORE SYNC LOGIC ---
+    async function runFullSync() {
+        log("Running Sync...");
+        const items = await OBR.scene.items.getItems();
+        const selection = await OBR.player.getSelection();
         
-        try {
-            await OBR.scene.items.updateItems(sel, (items) => {
-                for (let item of items) {
-                    let meta = JSON.parse(JSON.stringify(item.metadata[ID] || { c: [] }));
-                    const i = meta.c.findIndex(x => x.code === code);
-                    if (i > -1) meta.c.splice(i, 1);
-                    else if (meta.c.length < 4) meta.c.push({ code, color });
-                    item.metadata[ID] = meta;
-                }
-            });
-            log(`Metadata: ${code} toggled.`);
-        } catch (e) { log(`Toggle Err: ${e.message}`, true); }
-    };
-
-    async function sync(items) {
-        const sel = await OBR.player.getSelection();
-        const selectedId = sel?.[0];
-        
-        if (selectedId) {
-            const activeToken = items.find(i => i.id === selectedId);
-            if (activeToken) {
-                document.getElementById('status').innerText = (activeToken.name || "Token").toUpperCase();
-                const meta = activeToken.metadata[ID] || { c: [] };
+        // 1. Update Buttons
+        if (selection.length > 0) {
+            const token = items.find(i => i.id === selection[0]);
+            if (token) {
+                document.getElementById('status').innerText = (token.name || "Token").toUpperCase();
+                const meta = token.metadata[ID] || { c: [] };
                 document.querySelectorAll('button').forEach(btn => {
-                    const bCode = btn.id.split('-')[1];
-                    btn.classList.toggle('active', meta.c.some(x => x.code === bCode));
+                    const code = btn.id.split('-')[1];
+                    btn.classList.toggle('active', meta.c.some(x => x.code === code));
                 });
             }
         }
 
-        const myMarkers = items.filter(i => i.metadata[ID]?.isMarker);
+        // 2. Manage Labels
+        const myLabels = items.filter(i => i.metadata[ID]?.isMarker);
         const tokensWithData = items.filter(i => i.metadata[ID]?.c?.length > 0);
         
         let toAdd = [];
         let keptIds = new Set();
 
-        for (const token of tokensWithData) {
-            const conds = token.metadata[ID].c;
-            const size = (token.image?.width || 150);
+        for (const t of tokensWithData) {
+            const conds = t.metadata[ID].c;
+            const size = (t.image?.width || 150);
             const off = size / 3;
             const pts = [{x:-off, y:-off}, {x:off, y:-off}, {x:-off, y:off}, {x:off, y:off}];
 
             conds.forEach((c, i) => {
-                const existing = myMarkers.find(m => m.metadata[ID]?.owner === token.id && m.metadata[ID]?.code === c.code);
+                const existing = myLabels.find(m => m.metadata[ID]?.owner === t.id && m.metadata[ID]?.code === c.code);
                 if (existing) {
                     keptIds.add(existing.id);
                 } else {
-                    // CORRECT BUILDER: buildText with plainText object
+                    log(`Creating label for ${c.code}`);
                     const label = OBR.buildText()
-                        .id(`L-${token.id}-${c.code}-${Date.now()}`)
-                        .text({
-                            type: "PLAIN",
-                            plainText: c.code
-                        })
+                        .id(`L-${t.id}-${c.code}-${Date.now()}`)
+                        .text({ type: "PLAIN", plainText: c.code })
                         .fontSize(size / 6)
                         .fontWeight(800)
                         .fillColor(c.color)
                         .strokeColor("black")
                         .strokeWidth(2)
-                        .position({ 
-                            x: token.position.x + pts[i].x, 
-                            y: token.position.y + pts[i].y 
-                        })
-                        .attachedTo(token.id)
+                        .position({ x: t.position.x + pts[i].x, y: t.position.y + pts[i].y })
+                        .attachedTo(t.id)
                         .layer("TEXT")
-                        .metadata({ [ID]: { isMarker: true, owner: token.id, code: c.code } })
+                        .metadata({ [ID]: { isMarker: true, owner: t.id, code: c.code } })
                         .build();
                     toAdd.push(label);
                 }
             });
         }
 
-        const toDelete = myMarkers.filter(m => !keptIds.has(m.id)).map(m => m.id);
+        const toDelete = myLabels.filter(m => !keptIds.has(m.id)).map(m => m.id);
         if (toDelete.length > 0) await OBR.scene.items.deleteItems(toDelete);
-
         if (toAdd.length > 0) {
             try {
                 await OBR.scene.items.addItems(toAdd);
-                log(`Added ${toAdd.length} labels successfully.`);
-            } catch (err) {
-                log(`ADD ERROR: ${err.message}`, true);
-            }
+                log(`Success: Added ${toAdd.length}`);
+            } catch (e) { log(`Add Error: ${e.message}`, true); }
         }
     }
 
+    // --- THE TOGGLE COMMAND ---
+    window.toggle = async (code, color) => {
+        const sel = await OBR.player.getSelection();
+        if (!sel.length) return;
+
+        log(`Toggle ${code} start...`);
+        await OBR.scene.items.updateItems(sel, (items) => {
+            for (let item of items) {
+                let meta = JSON.parse(JSON.stringify(item.metadata[ID] || { c: [] }));
+                const i = meta.c.findIndex(x => x.code === code);
+                if (i > -1) meta.c.splice(i, 1);
+                else if (meta.c.length < 4) meta.c.push({ code, color });
+                item.metadata[ID] = meta;
+            }
+        });
+        
+        // DIRECT CALL: Don't wait for OBR to notice, just do it.
+        await runFullSync();
+    };
+
     OBR.onReady(() => {
-        log("OBR Connected.");
-        OBR.scene.items.onChange(sync);
-        OBR.player.onChange(async () => sync(await OBR.scene.items.getItems()));
+        log("Ready.");
+        // Listen for selection changes only
+        OBR.player.onChange(runFullSync);
+        runFullSync();
     });
 </script>
 </body>
