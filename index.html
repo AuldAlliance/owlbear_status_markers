@@ -5,129 +5,117 @@
     <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
         body { 
-            background: rgba(30, 30, 35, 0.95); color: white; 
-            font-family: sans-serif; padding: 12px; margin: 0;
+            background: #1e1e22; color: white; font-family: sans-serif; 
+            padding: 10px; margin: 0; display: flex; flex-direction: column; 
         }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        button {
-            cursor: pointer; border-radius: 4px; border: 1px solid #444;
-            background: #222; color: #888; padding: 12px;
-            font-size: 10px; font-weight: bold; text-transform: uppercase;
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        button { 
+            cursor: pointer; padding: 10px; border: 1px solid #444; border-radius: 4px;
+            background: #2a2a2a; color: #aaa; font-size: 10px; font-weight: bold;
         }
         button.active { background: #2196F3; color: white; border-color: white; }
-        #status { font-size: 10px; color: #aaa; margin-bottom: 10px; }
+        #status { font-size: 11px; color: #888; text-align: center; }
     </style>
 </head>
 <body>
-
-<div id="status">SELECT A TOKEN</div>
-<div class="grid">
-    <button data-code="BLN" data-color="#ff4444">Blinded</button>
-    <button data-code="POI" data-color="#00ff88">Poisoned</button>
-    <button data-code="PRN" data-color="#ffcc00">Prone</button>
-    <button data-code="STU" data-color="#00ccff">Stunned</button>
-</div>
+    <div id="status">Select a Token</div>
+    <div class="grid">
+        <button id="btn-BLN" onclick="window.toggle('BLN', '#ff4444')">Blinded</button>
+        <button id="btn-POI" onclick="window.toggle('POI', '#00ff88')">Poisoned</button>
+        <button id="btn-PRN" onclick="window.toggle('PRN', '#ffcc00')">Prone</button>
+        <button id="btn-FRI" onclick="window.toggle('FRI', '#bb66ff')">Fear</button>
+    </div>
 
 <script type="module">
-import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
+    import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
+    const ID = "com.auldalliance.status";
 
-const ID = "com.auldalliance.quadrant-status";
+    window.toggle = async (code, color) => {
+        const sel = await OBR.player.getSelection();
+        if (!sel?.length) return;
+        await OBR.scene.items.updateItems(sel, (items) => {
+            items.forEach(item => {
+                let meta = item.metadata[ID] || { c: [] };
+                const i = meta.c.findIndex(x => x.code === code);
+                if (i > -1) meta.c.splice(i, 1);
+                else if (meta.c.length < 4) meta.c.push({ code, color });
+                item.metadata[ID] = meta;
+            });
+        });
+    };
 
-// --- 1. TOGGLE METADATA ---
-async function toggleCondition(code, color) {
-    const selection = await OBR.player.getSelection();
-    if (!selection?.length) return;
-
-    await OBR.scene.items.updateItems(selection, (items) => {
-        for (let item of items) {
-            const meta = item.metadata[ID] || { conditions: [] };
-            const conditions = Array.isArray(meta.conditions) ? [...meta.conditions] : [];
-            
-            const idx = conditions.findIndex(c => c.code === code);
-            if (idx > -1) conditions.splice(idx, 1);
-            else conditions.push({ code, color });
-
-            item.metadata[ID] = { ...meta, conditions };
+    async function sync(items) {
+        const sel = await OBR.player.getSelection();
+        const selectedId = sel?.[0];
+        
+        // 1. Update UI Buttons
+        if (selectedId) {
+            const active = items.find(i => i.id === selectedId);
+            const meta = active?.metadata[ID] || { c: [] };
+            document.getElementById('status').innerText = (active?.name || "Token").toUpperCase();
+            document.querySelectorAll('button').forEach(btn => {
+                btn.classList.toggle('active', meta.c.some(x => x.code === btn.id.split('-')[1]));
+            });
         }
-    });
-}
 
-// --- 2. RENDER ENGINE (The "Colored Rings" way) ---
-async function sync(items) {
-    const selection = await OBR.player.getSelection();
-    const activeToken = items.find(i => i.id === selection?.[0]);
+        // 2. Manage Labels
+        const existing = items.filter(i => i.metadata[ID]?.isLabel);
+        const tokens = items.filter(i => i.metadata[ID]?.c?.length > 0);
+        const desired = [];
+        const desiredIds = new Set();
 
-    // Update UI Buttons
-    document.getElementById('status').innerText = activeToken ? `EDITING: ${activeToken.name}` : "SELECT A TOKEN";
-    document.querySelectorAll('button').forEach(btn => {
-        const code = btn.getAttribute('data-code');
-        const active = activeToken?.metadata[ID]?.conditions?.some(c => c.code === code);
-        btn.className = active ? 'active' : '';
-    });
+        tokens.forEach(t => {
+            const conds = t.metadata[ID].c;
+            const size = (t.image?.width || 150) * (t.scale?.x || 1);
+            const off = size / 3.2;
+            const pts = [{x:-off,y:-off,r:-45}, {x:off,y:-off,r:45}, {x:-off,y:off,r:-135}, {x:off,y:off,r:135}];
 
-    // Handle Labels
-    const existingLabels = items.filter(i => i.metadata[ID]?.isLabel);
-    const tokensWithData = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
-
-    let desiredIds = new Set();
-    let toAdd = [];
-
-    for (const token of tokensWithData) {
-        const conds = token.metadata[ID].conditions;
-        const size = (token.image?.width || 150) * (token.scale?.x || 1);
-        const offset = size / 3;
-
-        const positions = [
-            { x: -offset, y: -offset }, { x: offset, y: -offset },
-            { x: -offset, y: offset },  { x: offset, y: offset }
-        ];
-
-        conds.forEach((c, i) => {
-            const labelId = `${token.id}-${c.code}`;
-            desiredIds.add(labelId);
-
-            // If it doesn't exist yet, build it
-            if (!existingLabels.some(l => l.id === labelId)) {
-                const label = OBR.buildText()
-                    .id(labelId)
+            conds.forEach((c, i) => {
+                const lid = `${t.id}-${c.code}-L`;
+                desiredIds.add(lid);
+                desired.push(OBR.buildText()
+                    .id(lid)
                     .plainText(c.code)
-                    .fontSize(size / 6)
+                    .textType("PLAIN") // FIX: Explicit type
+                    .fontSize(size / 7)
+                    .fontWeight(800)
                     .fillColor(c.color)
                     .strokeColor("black")
                     .strokeWidth(2)
-                    .position({
-                        x: token.position.x + positions[i % 4].x,
-                        y: token.position.y + positions[i % 4].y
-                    })
-                    .attachedTo(token.id)
-                    .layer("ATTACHMENT")
+                    .position({ x: t.position.x + pts[i].x, y: t.position.y + pts[i].y })
+                    .rotation(pts[i].r + (t.rotation || 0))
+                    .scale({ x: 1, y: 1 }) // FIX: Explicit scale
+                    .attachedTo(t.id)
+                    .layer("CHARACTER") // FIX: Standard layer
+                    .zIndex(100)
                     .locked(true)
                     .disableHit(true)
                     .metadata({ [ID]: { isLabel: true } })
-                    .build();
-                toAdd.push(label);
-            }
+                    .build()
+                );
+            });
+        });
+
+        const toDel = existing.filter(l => !desiredIds.has(l.id)).map(l => l.id);
+        if (toDel.length) await OBR.scene.items.deleteItems(toDel);
+        
+        const toAdd = desired.filter(d => !existing.some(e => e.id === d.id));
+        if (toAdd.length) await OBR.scene.items.addItems(toAdd);
+
+        const toUp = desired.filter(d => existing.some(e => e.id === d.id));
+        if (toUp.length) await OBR.scene.items.updateItems(toUp.map(u => u.id), (itms) => {
+            itms.forEach(item => {
+                const src = toUp.find(x => x.id === item.id);
+                item.position = src.position;
+                item.rotation = src.rotation;
+            });
         });
     }
 
-    // Cleanup labels that are no longer needed
-    const toDelete = existingLabels.filter(l => !desiredIds.has(l.id)).map(l => l.id);
-    if (toDelete.length) await OBR.scene.items.deleteItems(toDelete);
-    if (toAdd.length) await OBR.scene.items.addItems(toAdd);
-}
-
-// --- 3. INIT ---
-OBR.onReady(() => {
-    document.querySelectorAll('button').forEach(btn => {
-        btn.onclick = () => toggleCondition(btn.dataset.code, btn.dataset.color);
+    OBR.onReady(() => {
+        OBR.scene.items.onChange(sync);
+        OBR.player.onChange(() => OBR.scene.items.getItems().then(sync));
     });
-
-    OBR.scene.items.onChange(sync);
-    OBR.player.onChange(async () => {
-        const items = await OBR.scene.items.getItems();
-        sync(items);
-    });
-});
 </script>
 </body>
 </html>
