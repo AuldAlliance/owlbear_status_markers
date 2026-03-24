@@ -4,14 +4,20 @@
     <meta charset="UTF-8">
     <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
-        body { background: #1a1a1c; color: white; font-family: sans-serif; padding: 10px; margin: 0; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
-        button { 
-            cursor: pointer; padding: 10px 2px; border: 1px solid #444; border-radius: 4px;
-            background: #2a2a2e; color: #888; font-size: 10px; font-weight: bold;
+        body { background: #202124; color: white; font-family: sans-serif; padding: 10px; margin: 0; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        button { cursor: pointer; padding: 12px; background: #3c4043; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        button.active { background: #4285f4; color: white; border-color: white; }
+        #status { font-size: 12px; color: #9aa0a6; text-align: center; }
+        
+        /* Debug Console Styles */
+        #debug-console { 
+            margin-top: auto; background: #000; color: #0f0; font-family: monospace; 
+            font-size: 10px; padding: 8px; border-radius: 4px; height: 80px; 
+            overflow-y: auto; border: 1px solid #333;
         }
-        button.active { background: #2196F3; color: white; border-color: #fff; }
-        #status { font-size: 11px; color: #666; text-align: center; font-weight: bold; }
+        .err { color: #ff4444; }
+        .info { color: #888; }
     </style>
 </head>
 <body>
@@ -23,106 +29,103 @@
         <button id="btn-STU" onclick="window.toggle('STU', '#00ccff')">Stunned</button>
     </div>
 
+    <div id="debug-console">System Ready...</div>
+
 <script type="module">
     import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
     const ID = "com.quadrant.status";
+    const logEl = document.getElementById('debug-console');
+
+    function log(msg, isErr = false) {
+        const span = document.createElement('div');
+        span.className = isErr ? 'err' : 'info';
+        span.innerText = `> ${msg}`;
+        logEl.appendChild(span);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
 
     window.toggle = async (code, color) => {
         const sel = await OBR.player.getSelection();
-        if (!sel?.length) return;
-        await OBR.scene.items.updateItems(sel, (items) => {
-            items.forEach(item => {
-                let meta = item.metadata[ID] || { c: [] };
-                const i = meta.c.findIndex(x => x.code === code);
-                if (i > -1) meta.c.splice(i, 1);
-                else if (meta.c.length < 4) meta.c.push({ code, color });
-                item.metadata[ID] = meta;
+        if (!sel?.length) { log("No selection found"); return; }
+
+        try {
+            await OBR.scene.items.updateItems(sel, (items) => {
+                for (let item of items) {
+                    let meta = item.metadata[ID] || { c: [] };
+                    const i = meta.c.findIndex(x => x.code === code);
+                    if (i > -1) meta.c.splice(i, 1);
+                    else if (meta.c.length < 4) meta.c.push({ code, color });
+                    item.metadata[ID] = meta;
+                }
             });
-        });
+            log(`Toggled ${code}`);
+        } catch (e) {
+            log(`Metadata Error: ${e.message}`, true);
+        }
     };
 
     async function sync(items) {
         const sel = await OBR.player.getSelection();
         const selectedId = sel?.[0];
         
-        // 1. UI Sync
         if (selectedId) {
-            const active = items.find(i => i.id === selectedId);
-            if (active) {
-                document.getElementById('status').innerText = (active.name || "Token").toUpperCase();
-                const meta = active.metadata[ID] || { c: [] };
+            const activeToken = items.find(i => i.id === selectedId);
+            if (activeToken) {
+                document.getElementById('status').innerText = (activeToken.name || "Token").toUpperCase();
+                const meta = activeToken.metadata[ID] || { c: [] };
                 document.querySelectorAll('button').forEach(btn => {
                     btn.classList.toggle('active', meta.c.some(x => x.code === btn.id.split('-')[1]));
                 });
             }
         }
 
-        // 2. Map Render Logic (Using Shapes instead of Text for better reliability)
-        const myMarkers = items.filter(i => i.metadata[ID]?.isMarker);
-        const tokens = items.filter(i => i.metadata[ID]?.c?.length > 0);
-        const validIds = new Set();
-        const toAdd = [];
+        const myItems = items.filter(i => i.metadata[ID]?.isMarker);
+        const tokensWithData = items.filter(i => i.metadata[ID]?.c?.length > 0);
+        
+        let toAdd = [];
+        let keptIds = new Set();
 
-        for (const t of tokens) {
-            const conds = t.metadata[ID].c;
-            const size = (t.image?.width || 150) * (t.scale?.x || 1);
-            const radius = size / 4.5; // Size of the marker
-            const off = size / 3;      // Distance from center
-
-            const pts = [{x:-off, y:-off}, {x:off, y:-off}, {x:-off, y:off}, {x:off, y:off}];
-
-            conds.forEach((c, i) => {
-                const mid = `M-${t.id}-${c.code}`;
-                validIds.add(mid);
-
-                if (!myMarkers.some(m => m.id === mid)) {
-                    // We build a simple CIRCLE shape. It is much more robust than Text.
-                    const marker = OBR.buildShape()
-                        .id(mid)
-                        .shapeType("CIRCLE")
-                        .width(radius)
-                        .height(radius)
+        for (const token of tokensWithData) {
+            token.metadata[ID].c.forEach((c, i) => {
+                const existing = myItems.find(m => m.metadata[ID]?.owner === token.id && m.metadata[ID]?.code === c.code);
+                if (existing) {
+                    keptIds.add(existing.id);
+                } else {
+                    const label = OBR.buildLabel()
+                        .id(`L-${token.id}-${c.code}-${Date.now()}`)
+                        .plainText(c.code)
                         .fillColor(c.color)
-                        .strokeColor("black")
-                        .strokeWidth(2)
-                        .position({ x: t.position.x + pts[i].x, y: t.position.y + pts[i].y })
-                        .attachedTo(t.id)
-                        .layer("ATTACHMENT")
-                        .locked(true)
-                        .disableHit(true)
-                        .metadata({ [ID]: { isMarker: true } })
+                        .attachedTo(token.id)
+                        .layer("CHARACTER")
+                        .metadata({ [ID]: { isMarker: true, owner: token.id, code: c.code } })
                         .build();
-                    toAdd.push(marker);
+                    toAdd.push(label);
                 }
             });
         }
 
-        // 3. Scene Sync
-        const toDelete = myMarkers.filter(m => !validIds.has(m.id)).map(m => m.id);
-        if (toDelete.length) await OBR.scene.items.deleteItems(toDelete);
-        if (toAdd.length) await OBR.scene.items.addItems(toAdd);
+        const toDelete = myItems.filter(m => !keptIds.has(m.id)).map(m => m.id);
+        
+        if (toDelete.length > 0) {
+            await OBR.scene.items.deleteItems(toDelete);
+            log(`Deleted ${toDelete.length} old labels`);
+        }
 
-        // 4. Position Update (Keeps markers attached during move)
-        const toUpdate = myMarkers.filter(m => validIds.has(m.id));
-        if (toUpdate.length) {
-            await OBR.scene.items.updateItems(toUpdate.map(m => m.id), (itms) => {
-                itms.forEach(m => {
-                    const parent = items.find(i => i.id === m.attachedTo);
-                    if (parent) {
-                        const idx = parent.metadata[ID].c.findIndex(c => `M-${parent.id}-${c.code}` === m.id);
-                        const size = (parent.image?.width || 150) * (parent.scale?.x || 1);
-                        const off = size / 3;
-                        const pts = [{x:-off, y:-off}, {x:off, y:-off}, {x:-off, y:off}, {x:off, y:off}];
-                        m.position = { x: parent.position.x + pts[idx].x, y: parent.position.y + pts[idx].y };
-                    }
-                });
-            });
+        if (toAdd.length > 0) {
+            log(`Attempting to add ${toAdd.length} items...`);
+            try {
+                await OBR.scene.items.addItems(toAdd);
+                log("AddItems Success!");
+            } catch (err) {
+                log(`ADD FAILURE: ${err.message}`, true);
+            }
         }
     }
 
     OBR.onReady(() => {
+        log("OBR Connected");
         OBR.scene.items.onChange(sync);
-        OBR.player.onChange(async (p) => sync(await OBR.scene.items.getItems()));
+        OBR.player.onChange(async () => sync(await OBR.scene.items.getItems()));
     });
 </script>
 </body>
