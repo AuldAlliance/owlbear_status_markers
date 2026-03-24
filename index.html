@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
+    <title>Quadrant Status Extension</title>
     <style>
         html { background: transparent; }
         body { 
@@ -16,6 +16,7 @@
             flex-direction: column;
             height: 100vh;
             box-sizing: border-box;
+            overflow: hidden;
         }
         .header {
             display: flex;
@@ -49,6 +50,7 @@
             font-size: 10px;
             font-weight: bold;
             text-transform: uppercase;
+            transition: all 0.2s;
         }
 
         button.active {
@@ -74,12 +76,12 @@
 </div>
 
 <div class="grid">
-    <button id="btn-BLN" onclick="toggle('BLN', '#ff4444')">Blinded</button>
-    <button id="btn-POI" onclick="toggle('POI', '#00ff88')">Poisoned</button>
-    <button id="btn-PRN" onclick="toggle('PRN', '#ffcc00')">Prone</button>
-    <button id="btn-FRI" onclick="toggle('FRI', '#bb66ff')">Fear</button>
-    <button id="btn-FIR" onclick="toggle('FIR', '#ff8800')">Fire</button>
-    <button id="btn-STU" onclick="toggle('STU', '#00ccff')">Stunned</button>
+    <button id="btn-BLN" data-code="BLN" data-color="#ff4444">Blinded</button>
+    <button id="btn-POI" data-code="POI" data-color="#00ff88">Poisoned</button>
+    <button id="btn-PRN" data-code="PRN" data-color="#ffcc00">Prone</button>
+    <button id="btn-FRI" data-code="FRI" data-color="#bb66ff">Fear</button>
+    <button id="btn-FIR" data-code="FIR" data-color="#ff8800">Fire</button>
+    <button id="btn-STU" data-code="STU" data-color="#00ccff">Stunned</button>
 </div>
 
 <script type="module">
@@ -87,72 +89,62 @@ import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
 
 const ID = "com.auldalliance.quadrant-status";
 
-let currentSelection = [];
-
 // --------------------
-// TOGGLE CONDITIONS
+// TOGGLE LOGIC
 // --------------------
-window.toggle = async (code, color) => {
-    if (!currentSelection.length) return;
+async function toggleCondition(code, color) {
+    const selection = await OBR.player.getSelection();
+    if (!selection || selection.length === 0) return;
 
-    await OBR.scene.items.updateItems(currentSelection, (items) => {
+    await OBR.scene.items.updateItems(selection, (items) => {
         for (let item of items) {
-            let meta = structuredClone(item.metadata[ID] || { conditions: [] });
-
-            const idx = meta.conditions.findIndex(c => c.code === code);
-
+            let meta = item.metadata[ID] || { conditions: [] };
+            const conditions = Array.isArray(meta.conditions) ? [...meta.conditions] : [];
+            
+            const idx = conditions.findIndex(c => c.code === code);
             if (idx > -1) {
-                meta.conditions.splice(idx, 1);
+                conditions.splice(idx, 1);
             } else {
-                meta.conditions.push({ code, color }); // ✅ removed 4-limit
+                conditions.push({ code, color });
             }
 
-            item.metadata[ID] = meta;
+            item.metadata[ID] = { ...meta, conditions };
         }
     });
-
-    const items = await OBR.scene.items.getItems();
-    sync(items);
-};
+}
 
 // --------------------
-// MAIN SYNC FUNCTION
+// SYNC & RENDER
 // --------------------
 async function sync(items) {
+    const selection = await OBR.player.getSelection();
+    const activeToken = items.find(i => i.id === selection?.[0]);
 
-    const selectedId = currentSelection?.[0];
-    const activeToken = items.find(i => i.id === selectedId);
+    const statusEl = document.getElementById('status');
+    const thumbEl = document.getElementById('tokenThumb');
 
-    const status = document.getElementById('status');
-    const thumb = document.getElementById('tokenThumb');
-
-    // ✅ ALWAYS USE FRESH DATA FOR UI
-    let meta = { conditions: [] };
-
+    // 1. UPDATE UI BUTTONS
     if (activeToken) {
-        const freshItems = await OBR.scene.items.getItems();
-        const freshToken = freshItems.find(i => i.id === activeToken.id);
-        meta = freshToken?.metadata[ID] || { conditions: [] };
-
-        status.innerHTML = `Editing: <span class="token-name">${(activeToken.name || "Token").toUpperCase()}</span>`;
-
+        const meta = activeToken.metadata[ID] || { conditions: [] };
+        statusEl.innerHTML = `Editing: <span class="token-name">${(activeToken.name || "Token").toUpperCase()}</span>`;
+        
         if (activeToken.image?.url) {
-            thumb.src = activeToken.image.url;
-            thumb.style.display = "block";
+            thumbEl.src = activeToken.image.url;
+            thumbEl.style.display = "block";
         }
 
         document.querySelectorAll('button').forEach(btn => {
-            const code = btn.id.split('-')[1];
-            btn.classList.toggle('active', meta.conditions.some(c => c.code === code));
+            const code = btn.getAttribute('data-code');
+            const isActive = meta.conditions.some(c => c.code === code);
+            btn.className = isActive ? 'active' : '';
         });
     } else {
-        status.innerText = "Select a Token";
-        thumb.style.display = "none";
+        statusEl.innerText = "Select a Token";
+        thumbEl.style.display = "none";
+        document.querySelectorAll('button').forEach(btn => btn.className = '');
     }
 
-    // --------------------
-    // LABEL RENDERING
-    // --------------------
+    // 2. LABEL RENDERING LOGIC
     const existingLabels = items.filter(i => i.metadata[ID]?.isLabel);
     const tokensWithData = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
 
@@ -160,7 +152,6 @@ async function sync(items) {
     let desiredIds = new Set();
 
     for (const token of tokensWithData) {
-
         const conds = token.metadata[ID].conditions;
         const w = (token.image?.width || 150) * (token.scale?.x || 1);
         const offset = w / 3.5;
@@ -191,12 +182,10 @@ async function sync(items) {
                     y: token.position.y + quadrantPos[i % 4].y
                 })
                 .rotation(token.rotation || 0)
-                .layer("FLOATING") // 🔥 FIXED RENDERING
+                .layer("ATTACHMENT") // Use ATTACHMENT so it moves with the token automatically
                 .locked(true)
                 .disableHit(true)
-                .pointerEvents("NONE")
-                .visible(true)
-                .zIndex(1000)
+                .visible(token.visible)
                 .metadata({ [ID]: { isLabel: true } })
                 .build();
 
@@ -204,49 +193,56 @@ async function sync(items) {
         });
     }
 
-    // CLEANUP
-    const toDelete = existingLabels
-        .filter(l => !desiredIds.has(l.id))
-        .map(l => l.id);
+    // CLEANUP UNUSED LABELS
+    const toDelete = existingLabels.filter(l => !desiredIds.has(l.id)).map(l => l.id);
+    if (toDelete.length) await OBR.scene.items.deleteItems(toDelete);
 
-    if (toDelete.length) {
-        await OBR.scene.items.deleteItems(toDelete);
-    }
-
+    // ADD NEW LABELS
     const toAdd = desiredLabels.filter(dl => !existingLabels.some(el => el.id === dl.id));
-    if (toAdd.length) {
-        await OBR.scene.items.addItems(toAdd);
-    }
+    if (toAdd.length) await OBR.scene.items.addItems(toAdd);
 
+    // UPDATE POSITIONS OF EXISTING LABELS
     const toUpdate = desiredLabels.filter(dl => existingLabels.some(el => el.id === dl.id));
     if (toUpdate.length) {
         await OBR.scene.items.updateItems(toUpdate.map(l => l.id), (items) => {
             items.forEach(item => {
                 const latest = toUpdate.find(u => u.id === item.id);
-                item.position = latest.position;
-                item.visible = true;
+                if (latest) {
+                    item.position = latest.position;
+                    item.rotation = latest.rotation;
+                    item.visible = latest.visible;
+                }
             });
         });
     }
 }
 
 // --------------------
-// INIT
+// INITIALIZATION
 // --------------------
 OBR.onReady(() => {
+    // Setup button clicks
+    document.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const code = btn.getAttribute('data-code');
+            const color = btn.getAttribute('data-color');
+            toggleCondition(code, color);
+        });
+    });
 
+    // Watch for selection changes
     OBR.player.onChange(async () => {
-        currentSelection = await OBR.player.getSelection();
         const items = await OBR.scene.items.getItems();
         sync(items);
     });
 
-    OBR.scene.items.onChange(sync);
-
-    OBR.scene.items.getItems().then(async (items) => {
-        currentSelection = await OBR.player.getSelection();
+    // Watch for scene changes
+    OBR.scene.items.onChange((items) => {
         sync(items);
     });
+
+    // Initial run
+    OBR.scene.items.getItems().then(sync);
 });
 </script>
 
