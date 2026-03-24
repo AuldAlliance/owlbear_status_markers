@@ -1,96 +1,156 @@
 <!DOCTYPE html>
 <html lang="en">
-<head> 
+<head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quadrant Status</title>
   <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
   <style>
-    body { font-family: sans-serif; background: #222; color: white; padding: 15px; }
+    :root { --bg: #242424; --text: #eee; --accent: #3498db; }
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      background: var(--bg); color: var(--text); 
+      margin: 0; padding: 15px; user-select: none;
+    }
+    h3 { margin: 0 0 15px 0; font-size: 1rem; text-align: center; color: var(--accent); }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    button { padding: 10px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
-    .active { outline: 3px solid #fff; }
-    h3 { margin-top: 0; font-size: 1.1rem; }
+    
+    button { 
+      border: none; border-radius: 8px; padding: 12px; 
+      font-weight: 800; color: white; cursor: pointer;
+      transition: transform 0.1s, filter 0.2s;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    }
+    button:hover { filter: brightness(1.2); }
+    button:active { transform: scale(0.95); }
+    
+    .status-msg { 
+      margin-top: 15px; font-size: 0.8rem; text-align: center; 
+      opacity: 0.7; font-style: italic; 
+    }
   </style>
 </head>
 <body>
-  <h3>Token Conditions</h3>
-  <div id="controls" class="grid">
-    <button style="background:#e74c3c" onclick="toggle('BLN', '#e74c3c')">BLN</button>
-    <button style="background:#2ecc71" onclick="toggle('POI', '#2ecc71')">POI</button>
-    <button style="background:#f1c40f; color: #000" onclick="toggle('PRN', '#f1c40f')">PRN</button>
-    <button style="background:#3498db" onclick="toggle('FRI', '#3498db')">FRI</button>
+
+  <h3>Condition Quadrants</h3>
+  
+  <div class="grid">
+    <button style="background:#e74c3c" onclick="toggleCond('BLN', '#e74c3c')">BLINDED</button>
+    <button style="background:#2ecc71" onclick="toggleCond('POI', '#2ecc71')">POISONED</button>
+    <button style="background:#f1c40f; color: #222" onclick="toggleCond('PRN', '#f1c40f')">PRONE</button>
+    <button style="background:#9b59b6" onclick="toggleCond('FRI', '#9b59b6')">FEAR</button>
+    <button style="background:#e67e22" onclick="toggleCond('FIR', '#e67e22')">FIRE</button>
+    <button style="background:#3498db" onclick="toggleCond('STU', '#3498db')">STUNNED</button>
   </div>
+
+  <div class="status-msg" id="selection-status">Select a token on the map</div>
 
   <script>
     const OBR = window.OBR;
-    const EXTENSION_ID = "com.yourname.quadrant_status";
+    const ID = "com.quadrant.status"; // Must match manifest if used there
 
-    async function toggle(code, color) {
+    // Helper to get conditions from a token
+    function getConditions(item) {
+      return item.metadata[ID]?.conditions || [];
+    }
+
+    async function toggleCond(code, color) {
       const selection = await OBR.player.getSelection();
-      if (!selection || selection.length === 0) return alert("Select a token first!");
+      
+      if (!selection || selection.length === 0) {
+        document.getElementById('selection-status').innerText = "❌ No token selected!";
+        setTimeout(() => { document.getElementById('selection-status').innerText = "Select a token on the map"; }, 2000);
+        return;
+      }
 
       await OBR.scene.items.updateItems(selection, (items) => {
         for (const item of items) {
-          const metadata = item.metadata[EXTENSION_ID] || { conditions: [] };
-          const index = metadata.conditions.findIndex(c => c.code === code);
-          
-          if (index > -1) {
-            metadata.conditions.splice(index, 1); // Remove if exists
-          } else if (metadata.conditions.length < 4) {
-            metadata.conditions.push({ code, color }); // Add if < 4
+          let conditions = getConditions(item);
+          const exists = conditions.findIndex(c => c.code === code);
+
+          if (exists > -1) {
+            conditions.splice(exists, 1);
+          } else if (conditions.length < 4) {
+            conditions.push({ code, color });
           }
-          item.metadata[EXTENSION_ID] = metadata;
+          
+          item.metadata[ID] = { conditions };
         }
       });
-      refreshVisuals();
     }
 
-    async function refreshVisuals() {
-      const items = await OBR.scene.items.getItems((item) => item.metadata[EXTENSION_ID]);
-      
-      // Clear existing attachments first
-      const allAttachments = await OBR.scene.items.getItemAttachments(items.map(i => i.id));
-      const toDelete = allAttachments.filter(a => a.metadata[EXTENSION_ID]).map(a => a.id);
-      if (toDelete.length > 0) await OBR.scene.items.deleteItems(toDelete);
+    async function renderLabels(items) {
+      // 1. Find all current labels belonging to this extension and delete them
+      const oldLabels = await OBR.scene.items.getItems((item) => item.metadata[ID]?.isLabel === true);
+      if (oldLabels.length > 0) {
+        await OBR.scene.items.deleteItems(oldLabels.map(l => l.id));
+      }
 
-      const newItems = [];
-      for (const item of items) {
-        const conditions = item.metadata[EXTENSION_ID].conditions;
-        const w = item.image.width;
-        const h = item.image.height;
+      const newLabels = [];
 
-        // Position Logic: Top-Left, Top-Right, Bottom-Left, Bottom-Right
+      // 2. Filter for tokens that have our metadata
+      const tokens = items.filter(item => item.metadata[ID]?.conditions);
+
+      for (const token of tokens) {
+        const conds = token.metadata[ID].conditions;
+        if (conds.length === 0) continue;
+
+        // Calculate size based on image dimensions and scale
+        const w = (token.image?.width || 150) * token.scale.x;
+        const h = (token.image?.height || 150) * token.scale.y;
+
+        // Quadrant Offsets (centered in each corner)
         const offsets = [
-          { x: -w/4, y: -h/4, rot: -45 }, { x: w/4, y: -h/4, rot: 45 },
-          { x: -w/4, y: h/4, rot: -135 }, { x: w/4, y: h/4, rot: 135 }
+          { x: -w/4, y: -h/4, rot: -45 },  // Q1
+          { x: w/4,  y: -h/4, rot: 45 },   // Q2
+          { x: -w/4, y: h/4,  rot: -135 }, // Q3
+          { x: w/4,  y: h/4,  rot: 135 }   // Q4
         ];
 
-        conditions.forEach((cond, i) => {
-          const pos = offsets[i];
-          const fontSize = w / 10;
-
-          // Create the Abbreviation Text
-          const textLabel = OBR.buildText()
-            .plainText(cond.code)
-            .fontSize(fontSize)
+        conds.forEach((c, i) => {
+          if (i > 3) return; // Hard limit 4
+          const off = offsets[i];
+          
+          const label = OBR.buildText()
+            .plainText(c.code)
+            .fontSize(w / 8) // Dynamic font size
             .fontWeight(800)
-            .fillColor("white")
+            .fillColor(c.color)
             .strokeColor("black")
-            .strokeWidth(w / 100)
-            .position({ x: item.position.x + pos.x, y: item.position.y + pos.y })
-            .rotation(pos.rot)
-            .attachedTo(item.id)
+            .strokeWidth(2)
+            .textAlign("CENTER")
+            .textType("PLAIN")
+            .position({ 
+              x: token.position.x + off.x, 
+              y: token.position.y + off.y 
+            })
+            .rotation(off.rot + (token.rotation || 0)) // Adjust for token rotation
+            .attachedTo(token.id)
             .layer("ATTACHMENT")
-            .metadata({ [EXTENSION_ID]: true })
+            .metadata({ [ID]: { isLabel: true } })
+            .disableHit(true) // So you can still click the token through the text
             .build();
 
-          newItems.push(textLabel);
+          newLabels.push(label);
         });
       }
-      await OBR.scene.items.addItems(newItems);
+
+      if (newLabels.length > 0) {
+        await OBR.scene.items.addItems(newLabels);
+      }
     }
 
     OBR.onReady(() => {
-      OBR.scene.items.onChange(refreshVisuals);
+      // Update local UI state
+      OBR.player.onChange((player) => {
+        const hasSel = player.selection && player.selection.length > 0;
+        document.getElementById('selection-status').innerText = hasSel ? "✅ Token Linked" : "Select a token on the map";
+      });
+
+      // Watch for any changes (moves, metadata updates, etc)
+      OBR.scene.items.onChange((items) => {
+        renderLabels(items);
+      });
     });
   </script>
 </body>
