@@ -2,58 +2,46 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quadrant Conditions</title>
+    <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
         html { background: transparent !important; }
         body { 
-            background: rgba(32, 33, 36, 0.9) !important; 
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            color: white; font-family: sans-serif; padding: 12px; margin: 0; 
-            display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; overflow: hidden;
+            background: rgba(30, 30, 35, 0.95) !important; backdrop-filter: blur(10px);
+            color: white; font-family: sans-serif; padding: 15px; margin: 0; 
+            display: flex; flex-direction: column; height: 100vh; box-sizing: border-box;
         }
-        .header { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); flex-shrink: 0;}
-        #status { font-size: 10px; color: #aaa; font-weight: bold; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; }
+        .header { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #444; margin-bottom: 15px; }
+        #status { font-size: 11px; font-weight: bold; color: #888; text-transform: uppercase; }
         .token-name { color: #2196F3; }
-
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { 
-            cursor: pointer; border-radius: 4px; font-weight: bold; padding: 12px 4px;
-            text-transform: uppercase; font-size: 10px; color: white; border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.05); transition: all 0.2s;
+            cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a2a;
+            color: white; padding: 12px 5px; font-size: 10px; font-weight: bold; text-transform: uppercase;
         }
-        button:hover { background: rgba(255,255,255,0.1); }
-        button.active { border-color: #2196F3; background: rgba(33, 150, 243, 0.3); box-shadow: 0 0 10px rgba(33, 150, 243, 0.2); }
-
-        #tokenThumb { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; border: 1px solid rgba(255,255,255,0.2); flex-shrink: 0; }
-        .footer { margin-top: auto; font-size: 9px; color: #666; text-align: center; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); }
+        button.active { background: #2196F3; border-color: #64b5f6; color: white; box-shadow: 0 0 10px rgba(33,150,243,0.4); }
+        #tokenThumb { width: 28px; height: 28px; border-radius: 4px; border: 1px solid #555; object-fit: cover; }
     </style>
 </head>
 <body>
     <div class="header">
-        <img id="tokenThumb" style="display: none;">
-        <div id="status">Awaiting Selection...</div>
+        <img id="tokenThumb" style="display:none">
+        <div id="status">Select a Token</div>
     </div>
-
     <div class="grid">
-        <button id="btn-BLN" style="border-left: 3px solid #e74c3c" onclick="window.toggle('BLN', '#e74c3c')">Blinded</button>
-        <button id="btn-POI" style="border-left: 3px solid #2ecc71" onclick="window.toggle('POI', '#2ecc71')">Poisoned</button>
-        <button id="btn-PRN" style="border-left: 3px solid #f1c40f" onclick="window.toggle('PRN', '#f1c40f')">Prone</button>
-        <button id="btn-FRI" style="border-left: 3px solid #9b59b6" onclick="window.toggle('FRI', '#9b59b6')">Fear</button>
-        <button id="btn-FIR" style="border-left: 3px solid #e67e22" onclick="window.toggle('FIR', '#e67e22')">Fire</button>
-        <button id="btn-STU" style="border-left: 3px solid #3498db" onclick="window.toggle('STU', '#3498db')">Stunned</button>
+        <button id="btn-BLN" onclick="window.toggle('BLN', '#ff4444')">Blinded</button>
+        <button id="btn-POI" onclick="window.toggle('POI', '#00ff88')">Poisoned</button>
+        <button id="btn-PRN" onclick="window.toggle('PRN', '#ffcc00')">Prone</button>
+        <button id="btn-FRI" onclick="window.toggle('FRI', '#bb66ff')">Fear</button>
+        <button id="btn-FIR" onclick="window.toggle('FIR', '#ff8800')">Fire</button>
+        <button id="btn-STU" onclick="window.toggle('STU', '#00ccff')">Stunned</button>
     </div>
-
-    <div class="footer">QUADRANT STATUS v1.0</div>
 
 <script type="module">
     import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
     
     const ID = "com.auldalliance.quadrant-status";
-    const STORAGE_KEY = `${ID}_last_token_id`;
+    const STORAGE_KEY = `${ID}_last_id`;
 
-    // Global toggle function
     window.toggle = async (code, color) => {
         const tokenId = localStorage.getItem(STORAGE_KEY);
         if (!tokenId) return;
@@ -61,123 +49,114 @@
         await OBR.scene.items.updateItems([tokenId], (items) => {
             for (let item of items) {
                 let meta = item.metadata[ID] || { conditions: [] };
-                const index = meta.conditions.findIndex(c => c.code === code);
-                
-                if (index > -1) {
-                    meta.conditions.splice(index, 1);
-                } else if (meta.conditions.length < 4) {
-                    meta.conditions.push({ code, color });
-                }
+                const idx = meta.conditions.findIndex(c => c.code === code);
+                if (idx > -1) meta.conditions.splice(idx, 1);
+                else if (meta.conditions.length < 4) meta.conditions.push({ code, color });
                 item.metadata[ID] = meta;
             }
         });
     };
 
-    const renderLabels = async (items) => {
-        // 1. Find existing labels created by this extension
-        const currentLabels = items.filter(i => i.metadata[ID]?.isLabel);
+    async function syncMap(items) {
+        const allMyLabels = items.filter(i => i.metadata[ID]?.isLabel);
+        const tokensWithConditions = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
         
-        // 2. Map out what labels SHOULD exist
-        const labelsToCreate = [];
-        const tokens = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
-
-        for (const token of tokens) {
+        const desiredLabels = [];
+        
+        for (const token of tokensWithConditions) {
             const conds = token.metadata[ID].conditions;
+            // Get current dimensions
             const w = (token.image?.width || 150) * (token.scale?.x || 1);
             const h = (token.image?.height || 150) * (token.scale?.y || 1);
 
             const offsets = [
-                { x: -w/3.2, y: -h/3.2, rot: -45 },
-                { x: w/3.2,  y: -h/3.2, rot: 45 },
-                { x: -w/3.2, y: h/3.2,  rot: -135 },
-                { x: w/3.2,  y: h/3.2,  rot: 135 }
+                { x: -w/3, y: -h/3, rot: -45 },
+                { x: w/3,  y: -h/3, rot: 45 },
+                { x: -w/3, y: h/3,  rot: -135 },
+                { x: w/3,  y: h/3,  rot: 135 }
             ];
 
             conds.forEach((c, i) => {
                 const off = offsets[i];
+                const labelId = `${token.id}-${c.code}`;
+                
                 const label = OBR.buildText()
-                    .id(`${token.id}-${c.code}-label`) // Persistent ID based on token+code
+                    .id(labelId)
                     .plainText(c.code)
-                    .fontSize(w / 8)
+                    .fontSize(w / 7)
                     .fontWeight(800)
                     .fillColor(c.color)
                     .strokeColor("black")
                     .strokeWidth(2)
-                    .textAlign("CENTER")
-                    .position({ 
-                        x: token.position.x + off.x, 
-                        y: token.position.y + off.y 
-                    })
+                    .position({ x: token.position.x + off.x, y: token.position.y + off.y })
                     .rotation(off.rot + (token.rotation || 0))
                     .attachedTo(token.id)
                     .layer("ATTACHMENT")
-                    .zIndex(100)
                     .disableHit(true)
+                    .locked(true)
                     .metadata({ [ID]: { isLabel: true } })
                     .build();
-                labelsToCreate.push(label);
+                
+                desiredLabels.push(label);
             });
         }
 
-        // 3. Diffing Logic: Only add what's new/changed, delete what's gone
-        const labelsToDelete = currentLabels.filter(cl => !labelsToCreate.find(lc => lc.id === cl.id));
-        
-        if (labelsToDelete.length > 0) {
-            await OBR.scene.items.deleteItems(labelsToDelete.map(l => l.id));
-        }
-        
-        if (labelsToCreate.length > 0) {
-            await OBR.scene.items.addItems(labelsToCreate);
-        }
-    };
+        // 1. Delete labels that are no longer in metadata
+        const toDelete = allMyLabels.filter(al => !desiredLabels.some(dl => dl.id === al.id));
+        if (toDelete.length > 0) await OBR.scene.items.deleteItems(toDelete.map(l => l.id));
 
-    const syncUI = async (selection) => {
-        const tokenId = selection?.[0] || localStorage.getItem(STORAGE_KEY);
+        // 2. Add or Update the labels
+        // We use a separate update call for existing ones to ensure they MOVE with the token
+        const toAdd = desiredLabels.filter(dl => !allMyLabels.some(al => al.id === dl.id));
+        const toUpdate = desiredLabels.filter(dl => allMyLabels.some(al => al.id === dl.id));
+
+        if (toAdd.length > 0) await OBR.scene.items.addItems(toAdd);
+        
+        if (toUpdate.length > 0) {
+            await OBR.scene.items.updateItems(toUpdate.map(l => l.id), (items) => {
+                items.forEach(item => {
+                    const latest = toUpdate.find(u => u.id === item.id);
+                    item.position = latest.position;
+                    item.rotation = latest.rotation;
+                    item.text.plainText = latest.text.plainText;
+                });
+            });
+        }
+    }
+
+    async function syncUI(selection) {
+        const id = selection?.[0] || localStorage.getItem(STORAGE_KEY);
         const status = document.getElementById('status');
         const thumb = document.getElementById('tokenThumb');
 
-        if (!tokenId) {
-            status.innerText = "Awaiting Selection...";
+        if (!id) {
+            status.innerText = "Select a Token";
             thumb.style.display = "none";
             return;
         }
 
-        const items = await OBR.scene.items.getItems([tokenId]);
+        const items = await OBR.scene.items.getItems([id]);
         const token = items[0];
-
         if (token) {
-            localStorage.setItem(STORAGE_KEY, tokenId);
-            const name = token.text?.plainText || token.name || "Unnamed Token";
-            status.innerHTML = `EDITING: <span class="token-name">${name.toUpperCase()}</span>`;
-            
-            if (token.image?.url) {
-                thumb.src = token.image.url;
-                thumb.style.display = "block";
-            }
+            localStorage.setItem(STORAGE_KEY, id);
+            status.innerHTML = `Editing: <span class="token-name">${(token.name || "Token").toUpperCase()}</span>`;
+            if (token.image?.url) { thumb.src = token.image.url; thumb.style.display = "block"; }
 
             const meta = token.metadata[ID] || { conditions: [] };
-            document.querySelectorAll('.grid button').forEach(btn => {
+            document.querySelectorAll('button').forEach(btn => {
                 const code = btn.id.split('-')[1];
-                const isActive = meta.conditions.some(c => c.code === code);
-                btn.classList.toggle('active', isActive);
+                btn.classList.toggle('active', meta.conditions.some(c => c.code === code));
             });
         }
-    };
+    }
 
     OBR.onReady(async () => {
-        // Handle selection changes
         OBR.player.onChange(p => syncUI(p.selection));
-
-        // Handle scene changes (movement, metadata updates)
-        OBR.scene.items.onChange((items) => {
-            renderLabels(items);
-            const activeId = localStorage.getItem(STORAGE_KEY);
-            if (activeId) syncUI([activeId]);
+        OBR.scene.items.onChange(items => {
+            syncMap(items);
+            syncUI(await OBR.player.getSelection());
         });
-
-        // Run initial sync
-        const currentSelection = await OBR.player.getSelection();
-        syncUI(currentSelection);
+        syncUI(await OBR.player.getSelection());
     });
 </script>
 </body>
