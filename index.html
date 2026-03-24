@@ -2,85 +2,83 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/lib/index.min.js"></script>
     <style>
-        body { background: #1e1e23; color: white; font-family: sans-serif; padding: 20px; }
-        button { 
+        body { background: #1e1e23; color: white; font-family: sans-serif; padding: 15px; text-align: center; }
+        #testBtn { 
             padding: 15px; width: 100%; cursor: pointer; 
             background: #2196F3; color: white; border: none; 
-            border-radius: 4px; font-weight: bold; margin-bottom: 10px;
+            border-radius: 4px; font-weight: bold;
         }
-        button:hover { background: #1976D2; }
         #log { 
             font-size: 11px; color: #00ff00; margin-top: 10px; 
             background: #000; padding: 10px; border-radius: 4px;
-            min-height: 80px; white-space: pre-wrap;
+            text-align: left; min-height: 60px; white-space: pre-wrap;
         }
     </style>
 </head>
 <body>
 
-    <button id="testBtn">SPAWN TEST CIRCLE</button>
-    <div id="log">Status: Waiting for SDK...</div>
+    <button id="testBtn">SPAWN RED DOT</button>
+    <div id="log">Status: Initializing...</div>
 
-<script type="module">
-// We import the specific builders we need
-import OBR, { ShapeBuilder, TextBuilder } from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
+<script>
+    // Access OBR from the window object directly
+    const log = (msg) => { 
+        document.getElementById('log').innerText += "\n> " + msg; 
+        console.log(msg);
+    };
 
-const log = (msg) => { 
-    const el = document.getElementById('log');
-    el.innerText += "\n> " + msg; 
-    console.log(msg);
-};
+    // This function handles the click
+    async function spawnDot() {
+        try {
+            const isReady = await OBR.isReady;
+            if (!isReady) {
+                log("Error: SDK not ready yet.");
+                return;
+            }
 
-document.getElementById('testBtn').onclick = async () => {
-    try {
-        log("Checking selection...");
-        const selection = await OBR.player.getSelection();
-        
-        if (!selection || selection.length === 0) {
-            alert("Please select a token on the map first!");
-            return;
+            const selection = await OBR.player.getSelection();
+            if (!selection || selection.length === 0) {
+                alert("Select a token on the map first!");
+                return;
+            }
+
+            const items = await OBR.scene.items.getItems();
+            const targetToken = items.find(i => i.id === selection[0]);
+
+            // Using the global builder syntax
+            const circle = OBR.buildShape()
+                .shapeType("CIRCLE")
+                .width(100)
+                .height(100)
+                .fillColor("red")
+                .position(targetToken.position)
+                .attachedTo(targetToken.id)
+                .layer("ATTACHMENT")
+                .locked(true)
+                .build();
+
+            await OBR.scene.items.addItems([circle]);
+            log("SUCCESS: Dot added to " + (targetToken.name || "Token"));
+
+        } catch (e) {
+            log("ERROR: " + e.message);
         }
-
-        const targetId = selection[0];
-        const items = await OBR.scene.items.getItems();
-        const targetToken = items.find(i => i.id === targetId);
-
-        if (!targetToken) {
-            log("Error: Selected token not found in scene.");
-            return;
-        }
-
-        log("Using ShapeBuilder...");
-        // NEW SYNTAX: Use 'new ShapeBuilder()' instead of 'OBR.buildShape()'
-        const circle = new ShapeBuilder()
-            .shapeType("CIRCLE")
-            .width(60)
-            .height(60)
-            .fillColor("red")
-            .fillOpacity(0.8)
-            .strokeColor("white")
-            .strokeWidth(2)
-            .position(targetToken.position)
-            .attachedTo(targetId)
-            .layer("ATTACHMENT")
-            .locked(true)
-            .disableHit(true)
-            .build();
-
-        log("Sending to OBR Scene...");
-        await OBR.scene.items.addItems([circle]);
-        log("SUCCESS: Red dot should be on the token!");
-
-    } catch (error) {
-        log("CRITICAL ERROR: " + error.message);
     }
-};
 
-OBR.onReady(() => {
-    log("SDK Ready. Version: " + OBR.VERSION);
-});
+    // Attach the click event
+    document.getElementById('testBtn').onclick = spawnDot;
+
+    // Use a robust check for OBR readiness
+    const checkInterval = setInterval(() => {
+        if (window.OBR && window.OBR.isReady) {
+            clearInterval(checkInterval);
+            OBR.onReady(() => {
+                log("SDK Connected! Version: " + OBR.VERSION);
+            });
+        }
+    }, 100);
 </script>
 </body>
 </html>
