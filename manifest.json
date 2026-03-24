@@ -1,0 +1,15 @@
+{
+  "name": "Status Markers",
+  "version": "1.0",
+  "manifest_version": 1,
+  "description": "Set token status markers",
+  "author": "Stephen Mackintosh",
+  "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
+  "action": {
+    "title": "Status Markers",
+    "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
+    "popover": "https://auldalliance.github.io/owlbear_status_markers/index.html",
+    "width": 400,
+    "height": 95
+  }
+} 
