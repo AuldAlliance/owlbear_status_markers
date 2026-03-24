@@ -1,6 +1,5 @@
 {
   "name": "Status Markers",
-  "id": "com.quadrant.status",
   "version": "1.0",
   "manifest_version": 1,
   "description": "Set token status markers",
