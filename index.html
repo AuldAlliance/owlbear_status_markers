@@ -4,108 +4,35 @@
     <meta charset="UTF-8">
     <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
-        body { background: #202124; color: white; font-family: sans-serif; padding: 10px; margin: 0; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        body { background: #1a1a1c; color: white; font-family: sans-serif; padding: 10px; margin: 0; display: flex; flex-direction: column; height: 100vh; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-        button { cursor: pointer; padding: 12px; background: #3c4043; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        button.active { background: #4285f4; color: white; border-color: white; }
-        #debug-console { margin-top: auto; background: #000; color: #0f0; font-family: monospace; font-size: 10px; padding: 8px; border-radius: 4px; height: 120px; overflow-y: auto; border: 1px solid #333; }
+        button { cursor: pointer; padding: 12px; background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; }
+        button.active { background: #4285f4; color: white; }
+        #debug { margin-top: auto; background: #000; color: #0f0; font-family: monospace; font-size: 10px; padding: 8px; height: 100px; overflow-y: auto; }
     </style>
 </head>
 <body>
-    <div id="status" style="text-align:center; font-size:12px; color:#9aa0a6;">SELECT A TOKEN</div>
+    <div id="status" style="text-align:center">SELECT TOKEN</div>
     <div class="grid">
-        <button id="btn-BLN" onclick="window.toggle('BLN', '#ff4444')">Blinded</button>
-        <button id="btn-POI" onclick="window.toggle('POI', '#00ff88')">Poisoned</button>
-        <button id="btn-PRN" onclick="window.toggle('PRN', '#ffcc00')">Prone</button>
-        <button id="btn-STU" onclick="window.toggle('STU', '#00ccff')">Stunned</button>
+        <button id="btn-BLN" onclick="window.toggle('BLN', '#ff4444')">BLN</button>
+        <button id="btn-POI" onclick="window.toggle('POI', '#00ff88')">POI</button>
     </div>
-    <div id="debug-console">Console initialized...</div>
+    <div id="debug">> System Ready</div>
 
 <script type="module">
     import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
-    const ID = "com.quadrant.status";
-    const logEl = document.getElementById('debug-console');
+    const ID = "com.quadrant.debug";
+    const logEl = document.getElementById('debug');
 
-    function log(msg, isErr = false) {
-        const div = document.createElement('div');
-        if (isErr) div.style.color = "#ff4444";
-        div.innerText = `> ${msg}`;
-        logEl.appendChild(div);
+    function log(msg) {
+        logEl.innerHTML += `<div>> ${msg}</div>`;
         logEl.scrollTop = logEl.scrollHeight;
     }
 
-    // --- THE CORE SYNC LOGIC ---
-    async function runFullSync() {
-        log("Running Sync...");
-        const items = await OBR.scene.items.getItems();
-        const selection = await OBR.player.getSelection();
-        
-        // 1. Update Buttons
-        if (selection.length > 0) {
-            const token = items.find(i => i.id === selection[0]);
-            if (token) {
-                document.getElementById('status').innerText = (token.name || "Token").toUpperCase();
-                const meta = token.metadata[ID] || { c: [] };
-                document.querySelectorAll('button').forEach(btn => {
-                    const code = btn.id.split('-')[1];
-                    btn.classList.toggle('active', meta.c.some(x => x.code === code));
-                });
-            }
-        }
-
-        // 2. Manage Labels
-        const myLabels = items.filter(i => i.metadata[ID]?.isMarker);
-        const tokensWithData = items.filter(i => i.metadata[ID]?.c?.length > 0);
-        
-        let toAdd = [];
-        let keptIds = new Set();
-
-        for (const t of tokensWithData) {
-            const conds = t.metadata[ID].c;
-            const size = (t.image?.width || 150);
-            const off = size / 3;
-            const pts = [{x:-off, y:-off}, {x:off, y:-off}, {x:-off, y:off}, {x:off, y:off}];
-
-            conds.forEach((c, i) => {
-                const existing = myLabels.find(m => m.metadata[ID]?.owner === t.id && m.metadata[ID]?.code === c.code);
-                if (existing) {
-                    keptIds.add(existing.id);
-                } else {
-                    log(`Creating label for ${c.code}`);
-                    const label = OBR.buildText()
-                        .id(`L-${t.id}-${c.code}-${Date.now()}`)
-                        .text({ type: "PLAIN", plainText: c.code })
-                        .fontSize(size / 6)
-                        .fontWeight(800)
-                        .fillColor(c.color)
-                        .strokeColor("black")
-                        .strokeWidth(2)
-                        .position({ x: t.position.x + pts[i].x, y: t.position.y + pts[i].y })
-                        .attachedTo(t.id)
-                        .layer("TEXT")
-                        .metadata({ [ID]: { isMarker: true, owner: t.id, code: c.code } })
-                        .build();
-                    toAdd.push(label);
-                }
-            });
-        }
-
-        const toDelete = myLabels.filter(m => !keptIds.has(m.id)).map(m => m.id);
-        if (toDelete.length > 0) await OBR.scene.items.deleteItems(toDelete);
-        if (toAdd.length > 0) {
-            try {
-                await OBR.scene.items.addItems(toAdd);
-                log(`Success: Added ${toAdd.length}`);
-            } catch (e) { log(`Add Error: ${e.message}`, true); }
-        }
-    }
-
-    // --- THE TOGGLE COMMAND ---
     window.toggle = async (code, color) => {
         const sel = await OBR.player.getSelection();
         if (!sel.length) return;
 
-        log(`Toggle ${code} start...`);
         await OBR.scene.items.updateItems(sel, (items) => {
             for (let item of items) {
                 let meta = JSON.parse(JSON.stringify(item.metadata[ID] || { c: [] }));
@@ -115,17 +42,54 @@
                 item.metadata[ID] = meta;
             }
         });
+
+        const items = await OBR.scene.items.getItems();
+        const tokens = items.filter(i => i.metadata[ID]?.c?.length > 0);
+        const myMarkers = items.filter(i => i.metadata[ID]?.isMarker);
         
-        // DIRECT CALL: Don't wait for OBR to notice, just do it.
-        await runFullSync();
+        let toAdd = [];
+        let activeIds = new Set();
+
+        for (const t of tokens) {
+            t.metadata[ID].c.forEach((c, i) => {
+                const lid = `L-${t.id}-${c.code}`;
+                activeIds.add(lid);
+
+                if (!myMarkers.some(m => m.id === lid)) {
+                    log(`Building Shape for ${c.code}...`);
+                    // MANUAL OBJECT CONSTRUCTION to ensure no missing properties
+                    const shape = OBR.buildShape()
+                        .id(lid)
+                        .shapeType("CIRCLE")
+                        .width(30).height(30)
+                        .fillColor(c.color)
+                        .attachedTo(t.id)
+                        .layer("ATTACHMENT")
+                        .metadata({ [ID]: { isMarker: true } })
+                        .build();
+                    
+                    // FORCE TYPE (The secret fix)
+                    shape.type = "SHAPE"; 
+                    toAdd.push(shape);
+                }
+            });
+        }
+
+        const toDelete = myMarkers.filter(m => !activeIds.has(m.id)).map(m => m.id);
+        if (toDelete.length) await OBR.scene.items.deleteItems(toDelete);
+        
+        if (toAdd.length > 0) {
+            log(`Calling addItems with ${toAdd.length} objects...`);
+            try {
+                await OBR.scene.items.addItems(toAdd);
+                log("API call finished.");
+            } catch (e) {
+                log(`API REJECTED: ${e.message}`);
+            }
+        }
     };
 
-    OBR.onReady(() => {
-        log("Ready.");
-        // Listen for selection changes only
-        OBR.player.onChange(runFullSync);
-        runFullSync();
-    });
+    OBR.onReady(() => log("OBR Connected. Select a token and click a button."));
 </script>
 </body>
 </html>
