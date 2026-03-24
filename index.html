@@ -87,15 +87,21 @@ import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
 
 const ID = "com.auldalliance.quadrant-status";
 
-window.toggle = async (code, color) => {
-    const selection = await OBR.player.getSelection();
-    if (!selection.length) return;
+// ✅ cache selection (fixes button doing nothing)
+let currentSelection = [];
 
-    await OBR.scene.items.updateItems(selection, (items) => {
+// --------------------
+// TOGGLE CONDITIONS
+// --------------------
+window.toggle = async (code, color) => {
+    if (!currentSelection.length) return;
+
+    await OBR.scene.items.updateItems(currentSelection, (items) => {
         for (let item of items) {
             let meta = structuredClone(item.metadata[ID] || { conditions: [] });
 
             const idx = meta.conditions.findIndex(c => c.code === code);
+
             if (idx > -1) {
                 meta.conditions.splice(idx, 1);
             } else if (meta.conditions.length < 4) {
@@ -106,20 +112,22 @@ window.toggle = async (code, color) => {
         }
     });
 
-    // Force refresh
     const items = await OBR.scene.items.getItems();
     sync(items);
 };
 
+// --------------------
+// MAIN SYNC FUNCTION
+// --------------------
 async function sync(items) {
-    const selection = await OBR.player.getSelection();
-    const selectedId = selection?.[0];
+
+    const selectedId = currentSelection?.[0];
     const activeToken = items.find(i => i.id === selectedId);
 
     const status = document.getElementById('status');
     const thumb = document.getElementById('tokenThumb');
 
-    // --- UI UPDATE ---
+    // UI UPDATE
     if (activeToken) {
         status.innerHTML = `Editing: <span class="token-name">${(activeToken.name || "Token").toUpperCase()}</span>`;
 
@@ -134,9 +142,14 @@ async function sync(items) {
             const code = btn.id.split('-')[1];
             btn.classList.toggle('active', meta.conditions.some(c => c.code === code));
         });
+    } else {
+        status.innerText = "Select a Token";
+        thumb.style.display = "none";
     }
 
-    // --- LABEL RENDER ---
+    // --------------------
+    // LABEL RENDERING
+    // --------------------
     const existingLabels = items.filter(i => i.metadata[ID]?.isLabel);
     const tokensWithData = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
 
@@ -144,8 +157,8 @@ async function sync(items) {
     let desiredIds = new Set();
 
     for (const token of tokensWithData) {
-        const conds = token.metadata[ID].conditions;
 
+        const conds = token.metadata[ID].conditions;
         const w = (token.image?.width || 150) * (token.scale?.x || 1);
         const offset = w / 3.5;
 
@@ -178,6 +191,7 @@ async function sync(items) {
                 .attachedTo(token.id)
                 .locked(true)
                 .disableHit(true)
+                .pointerEvents("NONE") // 🔥 prevents selection bugs
                 .visible(true)
                 .zIndex(1000)
                 .metadata({ [ID]: { isLabel: true } })
@@ -187,7 +201,7 @@ async function sync(items) {
         });
     }
 
-    // --- CLEANUP ---
+    // CLEANUP
     const toDelete = existingLabels
         .filter(l => !desiredIds.has(l.id))
         .map(l => l.id);
@@ -214,21 +228,24 @@ async function sync(items) {
     }
 }
 
+// --------------------
+// INIT
+// --------------------
 OBR.onReady(() => {
-    // 🔥 REQUIRED PERMISSIONS
-    OBR.player.setPermissions({
-        update: true,
-        delete: true
-    });
 
-    OBR.scene.items.onChange(sync);
-
+    // Track selection safely
     OBR.player.onChange(async () => {
+        currentSelection = await OBR.player.getSelection();
         const items = await OBR.scene.items.getItems();
         sync(items);
     });
 
-    OBR.scene.items.getItems().then(sync);
+    OBR.scene.items.onChange(sync);
+
+    OBR.scene.items.getItems().then(async (items) => {
+        currentSelection = await OBR.player.getSelection();
+        sync(items);
+    });
 });
 </script>
 
