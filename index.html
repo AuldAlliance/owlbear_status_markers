@@ -2,154 +2,159 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quadrant Status</title>
   <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
   <style>
-    :root { --bg: #242424; --text: #eee; --accent: #3498db; }
+    :root { --bg: #202020; --text: #eee; --accent: #3498db; }
     body { 
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-      background: var(--bg); color: var(--text); 
-      margin: 0; padding: 15px; user-select: none;
+      font-family: system-ui, -apple-system, sans-serif; 
+      background: var(--bg); color: var(--text); padding: 15px; 
     }
-    h3 { margin: 0 0 15px 0; font-size: 1rem; text-align: center; color: var(--accent); }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     button { 
-      border: none; border-radius: 8px; padding: 12px; 
-      font-weight: 800; color: white; cursor: pointer;
-      transition: transform 0.1s, filter 0.2s;
-      text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+      border: none; border-radius: 6px; padding: 12px 5px; 
+      font-weight: 800; color: white; cursor: pointer; font-size: 0.75rem;
     }
-    button:hover { filter: brightness(1.2); }
     button:active { transform: scale(0.95); }
-    
-    .status-msg { 
+    #status { 
       margin-top: 15px; font-size: 0.8rem; text-align: center; 
-      opacity: 0.7; font-style: italic; 
+      padding: 8px; border-radius: 4px; background: #333;
     }
   </style>
 </head>
 <body>
 
-  <h3>Condition Quadrants</h3>
+  <div style="text-align:center; margin-bottom:15px;">
+    <strong style="color:var(--accent)">QUADRANT STATUS</strong>
+  </div>
   
   <div class="grid">
-    <button style="background:#e74c3c" onclick="toggleCond('BLN', '#e74c3c')">BLINDED</button>
-    <button style="background:#2ecc71" onclick="toggleCond('POI', '#2ecc71')">POISONED</button>
-    <button style="background:#f1c40f; color: #222" onclick="toggleCond('PRN', '#f1c40f')">PRONE</button>
-    <button style="background:#9b59b6" onclick="toggleCond('FRI', '#9b59b6')">FEAR</button>
-    <button style="background:#e67e22" onclick="toggleCond('FIR', '#e67e22')">FIRE</button>
-    <button style="background:#3498db" onclick="toggleCond('STU', '#3498db')">STUNNED</button>
+    <button style="background:#e74c3c" onclick="toggle('BLN', '#e74c3c')">BLINDED</button>
+    <button style="background:#2ecc71" onclick="toggle('POI', '#2ecc71')">POISONED</button>
+    <button style="background:#f1c40f; color: #222" onclick="toggle('PRN', '#f1c40f')">PRONE</button>
+    <button style="background:#9b59b6" onclick="toggle('FRI', '#9b59b6')">FEAR</button>
+    <button style="background:#e67e22" onclick="toggle('FIR', '#e67e22')">FIRE</button>
+    <button style="background:#3498db" onclick="toggle('STU', '#3498db')">STUNNED</button>
   </div>
 
-  <div class="status-msg" id="selection-status">Select a token on the map</div>
+  <div id="status">Checking connection...</div>
 
   <script>
     const OBR = window.OBR;
-    const ID = "com.user.quadrantstatus"; // Must match manifest if used there
+    const ID = "com.quadrant.status.v1"; // Unique key for metadata
 
-    // Helper to get conditions from a token
-    function getConditions(item) {
-      return item.metadata[ID]?.conditions || [];
-    }
-
-    async function toggleCond(code, color) {
+    // --- 1. TOGGLE CONDITION ---
+    async function toggle(code, color) {
       const selection = await OBR.player.getSelection();
-      
+      console.log("Toggle clicked for:", code, "Selection:", selection);
+
       if (!selection || selection.length === 0) {
-        document.getElementById('selection-status').innerText = "❌ No token selected!";
-        setTimeout(() => { document.getElementById('selection-status').innerText = "Select a token on the map"; }, 2000);
+        updateStatus("⚠️ Select a token first", "#f1c40f");
         return;
       }
 
       await OBR.scene.items.updateItems(selection, (items) => {
         for (const item of items) {
-          let conditions = getConditions(item);
-          const exists = conditions.findIndex(c => c.code === code);
-
-          if (exists > -1) {
-            conditions.splice(exists, 1);
-          } else if (conditions.length < 4) {
-            conditions.push({ code, color });
+          // Initialize metadata structure if missing
+          let meta = item.metadata[ID] || { conditions: [] };
+          
+          const index = meta.conditions.findIndex(c => c.code === code);
+          if (index > -1) {
+            meta.conditions.splice(index, 1); // Remove
+          } else if (meta.conditions.length < 4) {
+            meta.conditions.push({ code, color }); // Add
           }
           
-          item.metadata[ID] = { conditions };
+          item.metadata[ID] = meta;
+          console.log("Updated metadata for item:", item.id, meta);
         }
       });
     }
 
-    async function renderLabels(items) {
-      // 1. Find all current labels belonging to this extension and delete them
+    // --- 2. RENDER LABELS ---
+    async function render(items) {
+      // Find and delete ALL old labels from this extension
       const oldLabels = await OBR.scene.items.getItems((item) => item.metadata[ID]?.isLabel === true);
       if (oldLabels.length > 0) {
         await OBR.scene.items.deleteItems(oldLabels.map(l => l.id));
       }
 
-      const newLabels = [];
+      const labelsToAdd = [];
 
-      // 2. Filter for tokens that have our metadata
-      const tokens = items.filter(item => item.metadata[ID]?.conditions);
+      // Filter for items that have our condition metadata
+      const tokens = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
 
       for (const token of tokens) {
         const conds = token.metadata[ID].conditions;
-        if (conds.length === 0) continue;
+        
+        // Calculate dynamic dimensions based on image & scale
+        const w = (token.image?.width || 150) * (token.scale?.x || 1);
+        const h = (token.image?.height || 150) * (token.scale?.y || 1);
 
-        // Calculate size based on image dimensions and scale
-        const w = (token.image?.width || 150) * token.scale.x;
-        const h = (token.image?.height || 150) * token.scale.y;
-
-        // Quadrant Offsets (centered in each corner)
         const offsets = [
-          { x: -w/4, y: -h/4, rot: -45 },  // Q1
-          { x: w/4,  y: -h/4, rot: 45 },   // Q2
-          { x: -w/4, y: h/4,  rot: -135 }, // Q3
-          { x: w/4,  y: h/4,  rot: 135 }   // Q4
+          { x: -w/3.5, y: -h/3.5, rot: -45 },  // Q1
+          { x: w/3.5,  y: -h/3.5, rot: 45 },   // Q2
+          { x: -w/3.5, y: h/3.5,  rot: -135 }, // Q3
+          { x: w/3.5,  y: h/3.5,  rot: 135 }   // Q4
         ];
 
         conds.forEach((c, i) => {
-          if (i > 3) return; // Hard limit 4
+          if (i > 3) return;
           const off = offsets[i];
-          
+
           const label = OBR.buildText()
             .plainText(c.code)
-            .fontSize(w / 8) // Dynamic font size
+            .fontSize(w / 8)
             .fontWeight(800)
             .fillColor(c.color)
             .strokeColor("black")
             .strokeWidth(2)
             .textAlign("CENTER")
-            .textType("PLAIN")
             .position({ 
               x: token.position.x + off.x, 
               y: token.position.y + off.y 
             })
-            .rotation(off.rot + (token.rotation || 0)) // Adjust for token rotation
+            // Important: add the token's current rotation to the offset rotation
+            .rotation(off.rot + (token.rotation || 0))
             .attachedTo(token.id)
             .layer("ATTACHMENT")
+            .disableHit(true) // Stops the label from blocking token clicks
             .metadata({ [ID]: { isLabel: true } })
-            .disableHit(true) // So you can still click the token through the text
             .build();
 
-          newLabels.push(label);
+          labelsToAdd.push(label);
         });
       }
 
-      if (newLabels.length > 0) {
-        await OBR.scene.items.addItems(newLabels);
+      if (labelsToAdd.length > 0) {
+        await OBR.scene.items.addItems(labelsToAdd);
       }
     }
 
+    // --- 3. INITIALIZE ---
+    function updateStatus(msg, color = "#eee") {
+      const el = document.getElementById('status');
+      el.innerText = msg;
+      el.style.color = color;
+    }
+
     OBR.onReady(() => {
-      // Update local UI state
+      console.log("OBR Ready");
+      updateStatus("Ready: Select a token");
+
+      // Update UI when selection changes
       OBR.player.onChange((player) => {
-        const hasSel = player.selection && player.selection.length > 0;
-        document.getElementById('selection-status').innerText = hasSel ? "✅ Token Linked" : "Select a token on the map";
+        const count = player.selection?.length || 0;
+        if (count > 0) {
+          updateStatus(`✅ ${count} Token(s) Selected`, "#2ecc71");
+        } else {
+          updateStatus("Select a token on the map");
+        }
       });
 
-      // Watch for any changes (moves, metadata updates, etc)
+      // Watch for any changes to trigger a re-render
       OBR.scene.items.onChange((items) => {
-        renderLabels(items);
+        console.log("Scene items changed, re-rendering...");
+        render(items);
       });
     });
   </script>
