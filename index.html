@@ -6,20 +6,20 @@
     <style>
         html { background: transparent; }
         body { 
-            background: rgba(32, 33, 36, 0.95); backdrop-filter: blur(10px);
+            background: rgba(30, 30, 35, 0.95); backdrop-filter: blur(10px);
             color: white; font-family: sans-serif; padding: 12px; margin: 0; 
             display: flex; flex-direction: column; height: 100vh; box-sizing: border-box;
         }
-        .header { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px; flex-shrink: 0; }
-        #status { font-size: 10px; font-weight: bold; color: #aaa; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis;}
+        .header { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px; }
+        #status { font-size: 10px; font-weight: bold; color: #aaa; text-transform: uppercase; overflow: hidden; }
         .token-name { color: #2196F3; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { 
             cursor: pointer; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05);
-            color: #888; padding: 12px 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; transition: all 0.2s;
+            color: #888; padding: 12px 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;
         }
-        button.active { background: #2196F3; border-color: #fff; color: white; box-shadow: 0 0 8px rgba(33, 150, 243, 0.4); }
-        #tokenThumb { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; border: 1px solid rgba(255,255,255,0.2); flex-shrink: 0; }
+        button.active { background: #2196F3; border-color: #fff; color: white; }
+        #tokenThumb { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; border: 1px solid rgba(255,255,255,0.2); }
     </style>
 </head>
 <body>
@@ -41,7 +41,6 @@
     
     const ID = "com.auldalliance.quadrant-status";
 
-    // 1. Toggle Function
     window.toggle = async (code, color) => {
         const selection = await OBR.player.getSelection();
         if (!selection || selection.length === 0) return;
@@ -57,36 +56,27 @@
         });
     };
 
-    // 2. Main Logic: Sync Map Labels AND UI Buttons
     async function sync(items) {
+        // --- 1. UI UPDATE ---
         const selection = await OBR.player.getSelection();
         const selectedId = selection?.[0];
+        const activeToken = items.find(i => i.id === selectedId);
         
-        // --- SYNC UI BUTTONS ---
         const status = document.getElementById('status');
         const thumb = document.getElementById('tokenThumb');
         
-        if (!selectedId) {
-            status.innerText = "Select a Token";
-            thumb.style.display = "none";
-            document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-        } else {
-            const activeToken = items.find(i => i.id === selectedId);
-            if (activeToken) {
-                const name = activeToken.text?.plainText || activeToken.name || "Token";
-                status.innerHTML = `Editing: <span class="token-name">${name.toUpperCase()}</span>`;
-                if (activeToken.image?.url) { thumb.src = activeToken.image.url; thumb.style.display = "block"; }
-
-                const meta = activeToken.metadata[ID] || { conditions: [] };
-                document.querySelectorAll('button').forEach(btn => {
-                    const code = btn.id.split('-')[1];
-                    btn.classList.toggle('active', meta.conditions.some(c => c.code === code));
-                });
-            }
+        if (activeToken) {
+            status.innerHTML = `Editing: <span class="token-name">${(activeToken.name || "Token").toUpperCase()}</span>`;
+            if (activeToken.image?.url) { thumb.src = activeToken.image.url; thumb.style.display = "block"; }
+            const meta = activeToken.metadata[ID] || { conditions: [] };
+            document.querySelectorAll('button').forEach(btn => {
+                const code = btn.id.split('-')[1];
+                btn.classList.toggle('active', meta.conditions.some(c => c.code === code));
+            });
         }
 
-        // --- SYNC MAP LABELS ---
-        const myLabels = items.filter(i => i.metadata[ID]?.isLabel);
+        // --- 2. MAP RENDER ---
+        const existingLabels = items.filter(i => i.metadata[ID]?.isLabel);
         const tokensWithData = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
         
         let desiredLabels = [];
@@ -96,7 +86,7 @@
             const conds = token.metadata[ID].conditions;
             const w = (token.image?.width || 150) * (token.scale?.x || 1);
             const h = (token.image?.height || 150) * (token.scale?.y || 1);
-            const offset = w / 3.2;
+            const offset = w / 3.5;
 
             const quadrantPos = [
                 { x: -offset, y: -offset, rot: -45 },
@@ -112,56 +102,54 @@
                 const label = OBR.buildText()
                     .id(labelId)
                     .plainText(c.code)
-                    .fontSize(w / 7.5)
+                    .fontSize(w / 7)
                     .fontWeight(800)
                     .fillColor(c.color)
                     .strokeColor("black")
                     .strokeWidth(2)
                     .textAlign("CENTER")
+                    .textType("PLAIN")
+                    .width(w / 3)   // Explicit width to prevent 0-size rendering
+                    .height(h / 3)  // Explicit height
                     .position({ x: token.position.x + quadrantPos[i].x, y: token.position.y + quadrantPos[i].y })
                     .rotation(quadrantPos[i].rot + (token.rotation || 0))
-                    .scale({ x: 1, y: 1 })
                     .attachedTo(token.id)
-                    .layer("CHARACTER") // Most reliable layer
-                    .zIndex(1000)      // Ensure it sits on top of token
+                    .layer("ATTACHMENT")
                     .locked(true)
                     .disableHit(true)
+                    .visible(true)
                     .metadata({ [ID]: { isLabel: true } })
                     .build();
                 desiredLabels.push(label);
             });
         }
 
-        // Add/Remove logic
-        const toDelete = myLabels.filter(l => !desiredIds.has(l.id)).map(l => l.id);
+        // Clean/Add/Update
+        const toDelete = existingLabels.filter(l => !desiredIds.has(l.id)).map(l => l.id);
         if (toDelete.length > 0) await OBR.scene.items.deleteItems(toDelete);
 
-        const toAdd = desiredLabels.filter(dl => !myLabels.some(ml => ml.id === dl.id));
+        const toAdd = desiredLabels.filter(dl => !existingLabels.some(el => el.id === dl.id));
         if (toAdd.length > 0) await OBR.scene.items.addItems(toAdd);
 
-        const toUpdate = desiredLabels.filter(dl => myLabels.some(ml => ml.id === dl.id));
+        const toUpdate = desiredLabels.filter(dl => existingLabels.some(el => el.id === dl.id));
         if (toUpdate.length > 0) {
             await OBR.scene.items.updateItems(toUpdate.map(l => l.id), (items) => {
                 items.forEach(item => {
                     const latest = toUpdate.find(u => u.id === item.id);
                     item.position = latest.position;
                     item.rotation = latest.rotation;
+                    item.visible = true;
                 });
             });
         }
     }
 
     OBR.onReady(() => {
-        // One single listener to handle EVERYTHING
         OBR.scene.items.onChange(sync);
-        
-        // Handle selection separately to trigger UI refresh when switching tokens
-        OBR.player.onChange(async (p) => {
+        OBR.player.onChange(async () => {
             const items = await OBR.scene.items.getItems();
             sync(items);
         });
-
-        // Initial Load
         OBR.scene.items.getItems().then(sync);
     });
 </script>
