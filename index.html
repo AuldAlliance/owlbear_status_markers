@@ -4,21 +4,34 @@
     <meta charset="UTF-8">
     <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
-        body { background: #222; color: white; font-family: sans-serif; padding: 20px; }
-        button { padding: 15px; width: 100%; cursor: pointer; background: #444; color: white; border: none; border-radius: 4px; }
-        button:active { background: #666; }
-        #log { font-size: 10px; color: #00ff00; margin-top: 10px; background: #000; padding: 5px; height: 50px; overflow-y: auto; }
+        body { background: #1e1e23; color: white; font-family: sans-serif; padding: 20px; }
+        button { 
+            padding: 15px; width: 100%; cursor: pointer; 
+            background: #2196F3; color: white; border: none; 
+            border-radius: 4px; font-weight: bold; margin-bottom: 10px;
+        }
+        button:hover { background: #1976D2; }
+        #log { 
+            font-size: 11px; color: #00ff00; margin-top: 10px; 
+            background: #000; padding: 10px; border-radius: 4px;
+            min-height: 80px; white-space: pre-wrap;
+        }
     </style>
 </head>
 <body>
 
     <button id="testBtn">SPAWN TEST CIRCLE</button>
-    <div id="log">Status: Waiting for click...</div>
+    <div id="log">Status: Waiting for SDK...</div>
 
 <script type="module">
-import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
+// We import the specific builders we need
+import OBR, { ShapeBuilder, TextBuilder } from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
 
-const log = (msg) => { document.getElementById('log').innerText += "\n" + msg; };
+const log = (msg) => { 
+    const el = document.getElementById('log');
+    el.innerText += "\n> " + msg; 
+    console.log(msg);
+};
 
 document.getElementById('testBtn').onclick = async () => {
     try {
@@ -34,35 +47,39 @@ document.getElementById('testBtn').onclick = async () => {
         const items = await OBR.scene.items.getItems();
         const targetToken = items.find(i => i.id === targetId);
 
-        log("Building circle...");
-        // This is the most basic item OBR can render
-        const circle = OBR.buildShape()
-            .width(100)
-            .height(100)
+        if (!targetToken) {
+            log("Error: Selected token not found in scene.");
+            return;
+        }
+
+        log("Using ShapeBuilder...");
+        // NEW SYNTAX: Use 'new ShapeBuilder()' instead of 'OBR.buildShape()'
+        const circle = new ShapeBuilder()
             .shapeType("CIRCLE")
+            .width(60)
+            .height(60)
             .fillColor("red")
-            .fillOpacity(0.5)
+            .fillOpacity(0.8)
             .strokeColor("white")
-            .strokeWidth(4)
-            .position(targetToken.position) 
-            .layer("MOUNT") // Mount is high-visibility
+            .strokeWidth(2)
+            .position(targetToken.position)
             .attachedTo(targetId)
-            .locked(false)
+            .layer("ATTACHMENT")
+            .locked(true)
+            .disableHit(true)
             .build();
 
-        log("Sending to OBR...");
+        log("Sending to OBR Scene...");
         await OBR.scene.items.addItems([circle]);
-        log("SUCCESS: Item added.");
+        log("SUCCESS: Red dot should be on the token!");
 
     } catch (error) {
-        log("ERROR: " + error.message);
-        console.error(error);
-        alert("OBR Rejected the item: " + error.message);
+        log("CRITICAL ERROR: " + error.message);
     }
 };
 
 OBR.onReady(() => {
-    log("SDK Ready.");
+    log("SDK Ready. Version: " + OBR.VERSION);
 });
 </script>
 </body>
