@@ -5,7 +5,6 @@
   "description": "Set token status markers",
   "author": "Stephen Mackintosh",
   "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
-  "permissions": ["ITEM"],
   "action": {
     "title": "Status Markers",
     "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
