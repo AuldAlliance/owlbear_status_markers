@@ -4,22 +4,22 @@
     <meta charset="UTF-8">
     <script src="https://unpkg.com/@owlbear-rodeo/sdk"></script>
     <style>
-        html { background: transparent !important; }
+        html { background: transparent; }
         body { 
-            background: rgba(30, 30, 35, 0.95) !important; backdrop-filter: blur(10px);
-            color: white; font-family: sans-serif; padding: 15px; margin: 0; 
+            background: rgba(30, 30, 35, 0.95); backdrop-filter: blur(10px);
+            color: white; font-family: sans-serif; padding: 12px; margin: 0; 
             display: flex; flex-direction: column; height: 100vh; box-sizing: border-box;
         }
-        .header { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #444; margin-bottom: 15px; }
-        #status { font-size: 11px; font-weight: bold; color: #888; text-transform: uppercase; }
+        .header { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid #444; margin-bottom: 12px; }
+        #status { font-size: 11px; font-weight: bold; color: #888; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis;}
         .token-name { color: #2196F3; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { 
             cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a2a;
-            color: white; padding: 12px 5px; font-size: 10px; font-weight: bold; text-transform: uppercase;
+            color: #ccc; padding: 12px 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;
         }
-        button.active { background: #2196F3; border-color: #64b5f6; color: white; box-shadow: 0 0 10px rgba(33,150,243,0.4); }
-        #tokenThumb { width: 28px; height: 28px; border-radius: 4px; border: 1px solid #555; object-fit: cover; }
+        button.active { background: #2196F3; border-color: #fff; color: white; }
+        #tokenThumb { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; border: 1px solid #555; flex-shrink: 0; }
     </style>
 </head>
 <body>
@@ -40,13 +40,13 @@
     import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
     
     const ID = "com.auldalliance.quadrant-status";
-    const STORAGE_KEY = `${ID}_last_id`;
 
+    // --- 1. TOGGLE LOGIC ---
     window.toggle = async (code, color) => {
-        const tokenId = localStorage.getItem(STORAGE_KEY);
-        if (!tokenId) return;
+        const selection = await OBR.player.getSelection();
+        if (!selection || selection.length === 0) return;
 
-        await OBR.scene.items.updateItems([tokenId], (items) => {
+        await OBR.scene.items.updateItems(selection, (items) => {
             for (let item of items) {
                 let meta = item.metadata[ID] || { conditions: [] };
                 const idx = meta.conditions.findIndex(c => c.code === code);
@@ -57,43 +57,49 @@
         });
     };
 
-    async function syncMap(items) {
-        const allMyLabels = items.filter(i => i.metadata[ID]?.isLabel);
-        const tokensWithConditions = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
+    // --- 2. RENDER LOGIC ---
+    async function render(items) {
+        const currentLabels = items.filter(i => i.metadata[ID]?.isLabel);
+        const tokens = items.filter(i => i.metadata[ID]?.conditions?.length > 0);
         
-        const desiredLabels = [];
-        
-        for (const token of tokensWithConditions) {
+        let desiredLabels = [];
+        let desiredIds = new Set();
+
+        for (const token of tokens) {
             const conds = token.metadata[ID].conditions;
-            // Get current dimensions
             const w = (token.image?.width || 150) * (token.scale?.x || 1);
             const h = (token.image?.height || 150) * (token.scale?.y || 1);
+            const offset = w / 3.2;
 
-            const offsets = [
-                { x: -w/3, y: -h/3, rot: -45 },
-                { x: w/3,  y: -h/3, rot: 45 },
-                { x: -w/3, y: h/3,  rot: -135 },
-                { x: w/3,  y: h/3,  rot: 135 }
+            const pos = [
+                { x: -offset, y: -offset, rot: -45 },
+                { x: offset,  y: -offset, rot: 45 },
+                { x: -offset, y: offset,  rot: -135 },
+                { x: offset,  y: offset,  rot: 135 }
             ];
 
             conds.forEach((c, i) => {
-                const off = offsets[i];
                 const labelId = `${token.id}-${c.code}`;
-                
+                desiredIds.add(labelId);
+
                 const label = OBR.buildText()
                     .id(labelId)
                     .plainText(c.code)
-                    .fontSize(w / 7)
+                    .fontSize(w / 7.5)
                     .fontWeight(800)
                     .fillColor(c.color)
                     .strokeColor("black")
                     .strokeWidth(2)
-                    .position({ x: token.position.x + off.x, y: token.position.y + off.y })
-                    .rotation(off.rot + (token.rotation || 0))
+                    .textAlign("CENTER")
+                    .position({ 
+                        x: token.position.x + pos[i].x, 
+                        y: token.position.y + pos[i].y 
+                    })
+                    .rotation(pos[i].rot + (token.rotation || 0))
                     .attachedTo(token.id)
                     .layer("ATTACHMENT")
-                    .disableHit(true)
                     .locked(true)
+                    .disableHit(true)
                     .metadata({ [ID]: { isLabel: true } })
                     .build();
                 
@@ -101,45 +107,44 @@
             });
         }
 
-        // 1. Delete labels that are no longer in metadata
-        const toDelete = allMyLabels.filter(al => !desiredLabels.some(dl => dl.id === al.id));
-        if (toDelete.length > 0) await OBR.scene.items.deleteItems(toDelete.map(l => l.id));
+        // Delete what's gone
+        const toDelete = currentLabels.filter(l => !desiredIds.has(l.id)).map(l => l.id);
+        if (toDelete.length > 0) await OBR.scene.items.deleteItems(toDelete);
 
-        // 2. Add or Update the labels
-        // We use a separate update call for existing ones to ensure they MOVE with the token
-        const toAdd = desiredLabels.filter(dl => !allMyLabels.some(al => al.id === dl.id));
-        const toUpdate = desiredLabels.filter(dl => allMyLabels.some(al => al.id === dl.id));
-
+        // Add what's new
+        const toAdd = desiredLabels.filter(dl => !currentLabels.some(cl => cl.id === dl.id));
         if (toAdd.length > 0) await OBR.scene.items.addItems(toAdd);
-        
+
+        // Update existing (movement/metadata sync)
+        const toUpdate = desiredLabels.filter(dl => currentLabels.some(cl => cl.id === dl.id));
         if (toUpdate.length > 0) {
             await OBR.scene.items.updateItems(toUpdate.map(l => l.id), (items) => {
                 items.forEach(item => {
                     const latest = toUpdate.find(u => u.id === item.id);
                     item.position = latest.position;
                     item.rotation = latest.rotation;
-                    item.text.plainText = latest.text.plainText;
                 });
             });
         }
     }
 
+    // --- 3. UI SYNC ---
     async function syncUI(selection) {
-        const id = selection?.[0] || localStorage.getItem(STORAGE_KEY);
         const status = document.getElementById('status');
         const thumb = document.getElementById('tokenThumb');
 
-        if (!id) {
+        if (!selection || selection.length === 0) {
             status.innerText = "Select a Token";
             thumb.style.display = "none";
+            document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
             return;
         }
 
-        const items = await OBR.scene.items.getItems([id]);
+        const items = await OBR.scene.items.getItems([selection[0]]);
         const token = items[0];
         if (token) {
-            localStorage.setItem(STORAGE_KEY, id);
-            status.innerHTML = `Editing: <span class="token-name">${(token.name || "Token").toUpperCase()}</span>`;
+            const name = token.text?.plainText || token.name || "Token";
+            status.innerHTML = `Editing: <span class="token-name">${name.toUpperCase()}</span>`;
             if (token.image?.url) { thumb.src = token.image.url; thumb.style.display = "block"; }
 
             const meta = token.metadata[ID] || { conditions: [] };
@@ -150,13 +155,12 @@
         }
     }
 
-    OBR.onReady(async () => {
+    OBR.onReady(() => {
+        OBR.scene.items.onChange(render);
         OBR.player.onChange(p => syncUI(p.selection));
-        OBR.scene.items.onChange(items => {
-            syncMap(items);
-            syncUI(await OBR.player.getSelection());
-        });
-        syncUI(await OBR.player.getSelection());
+        
+        // Initial check
+        OBR.player.getSelection().then(syncUI);
     });
 </script>
 </body>
