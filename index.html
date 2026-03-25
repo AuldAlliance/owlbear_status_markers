@@ -1,45 +1,71 @@
-OBR.contextMenu.create({
-  id: "com.simple.marker/mark",
-  items: [
-    {
-      id: "mark-token",
-      label: "Mark Token",
-      icon: "https://www.owlbear.rodeo/logo.svg",
-      filter: {
-        every: [{ key: "type", value: "IMAGE" }]
-      },
-      async onClick(context) {
-        const tokenIds = context.items.map(item => item.id);
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <script type="module">
+    import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js";
 
-        const existingAttachments = await OBR.scene.items.getItemAttachments(tokenIds);
+    OBR.onReady(() => {
 
-        const markerIdsToRemove = existingAttachments
-          .filter(item => item.metadata["com.simple.marker/isMarker"])
-          .map(item => item.id);
+      OBR.contextMenu.create({
+        id: "com.simple.marker/menu",
+        items: [
+          {
+            id: "mark-token",
+            label: "Mark Token",
+            icon: "https://www.owlbear.rodeo/logo.svg",
 
-        if (markerIdsToRemove.length > 0) {
-          await OBR.scene.items.deleteItems(markerIdsToRemove);
-        } else {
-          const markers = context.items.map((token) => {
-            return OBR.scene.items.buildShape()
-              .width(token.width)
-              .height(token.height)
-              .shapeType("CIRCLE")
-              .fillColor("#ff0000")
-              .fillOpacity(0.4)
-              .strokeColor("#000000")
-              .strokeWidth(2)
-              .position(token.position)
-              .attachedTo(token.id)
-              .layer("ATTACHMENT")
-              .metadata({ "com.simple.marker/isMarker": true })
-              .disableHit(true)
-              .build();
-          });
+            // Only show on image tokens
+            filter: {
+              every: [{ key: "type", value: "IMAGE" }]
+            },
 
-          await OBR.scene.items.addItems(markers);
-        }
-      }
-    }
-  ]
-});
+            async onClick(context) {
+              const tokenIds = context.items.map(item => item.id);
+
+              // Get all attachments on selected tokens
+              const existingAttachments = await OBR.scene.items.getItemAttachments(tokenIds);
+
+              // Find our markers
+              const markerIdsToRemove = existingAttachments
+                .filter(item => item.metadata?.["com.simple.marker/isMarker"])
+                .map(item => item.id);
+
+              if (markerIdsToRemove.length > 0) {
+                // REMOVE markers (toggle off)
+                await OBR.scene.items.deleteItems(markerIdsToRemove);
+              } else {
+                // CREATE markers (toggle on)
+                const markers = context.items.map((token) => {
+                  return OBR.scene.items.buildShape()
+                    .width(token.width)
+                    .height(token.height)
+                    .shapeType("CIRCLE")
+                    .fillColor("#ff0000")
+                    .fillOpacity(0.4)
+                    .strokeColor("#000000")
+                    .strokeWidth(2)
+                    .position(token.position)
+                    .attachedTo(token.id)
+                    .layer("ATTACHMENT")
+                    .disableHit(true)
+                    .metadata({ "com.simple.marker/isMarker": true })
+                    .build();
+                });
+
+                await OBR.scene.items.addItems(markers);
+              }
+            }
+          }
+        ]
+      });
+
+    });
+  </script>
+</head>
+
+<body style="background:#222;color:white;font-family:sans-serif;padding:10px;">
+  <h3>Token Marker Extension</h3>
+  <p>Right-click a token → “Mark Token” to toggle marker.</p>
+</body>
+</html>
