@@ -3,7 +3,7 @@
   "name": "Token Marker",
   "version": "1.0.5",
   "manifest_version": 1,
-  "background_url": "/index.html",
+  "background_url": "https://auldalliance.github.io/owlbear_status_markers/index.html",
   "action": {
     "title": "Token Marker",
     "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
