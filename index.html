@@ -1,53 +1,60 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Token Marker Extension</title>
-</head>
-<body>
   <script type="module">
     import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js";
 
-    OBR.onReady(() => {
-      // Create the context menu item
+    OBR.onReady(async () => {
       OBR.contextMenu.create({
         id: "com.simple.marker/mark",
         icons: [
           {
-            icon: "https://www.owlbear.rodeo/logo.svg", // Placeholder icon
-            label: "Add Circle Mark",
+            icon: "https://www.owlbear.rodeo/logo.svg",
+            label: "Mark Token",
             filter: {
-              every: [{ key: "type", value: "IMAGE" }],
-            },
-          },
+              every: [{ key: "type", value: "IMAGE" }]
+            }
+          }
         ],
         async onClick(context) {
-          const markers = [];
+          // 1. Get all existing attachments for the selected tokens
+          const tokenIds = context.items.map(item => item.id);
+          const existingAttachments = await OBR.scene.items.getItemAttachments(tokenIds);
+          
+          // 2. Identify if any of those attachments are our markers
+          const markerIdsToRemove = existingAttachments
+            .filter(item => item.metadata["com.simple.marker/isMarker"])
+            .map(item => item.id);
 
-          for (const token of context.selection.items) {
-            // Build the circle shape
-            const circle = OBR.scene.items.buildShape()
-              .width(token.width)
-              .height(token.height)
-              .shapeType("CIRCLE")
-              .fillColor("#ff0000")
-              .fillOpacity(0.4)
-              .strokeColor("#000000")
-              .strokeWidth(2)
-              .position(token.position)
-              .attachedTo(token.id) // Pins it to the token
-              .layer("ATTACHMENT")
-              .disableHit(true)     // Prevents you from accidentally clicking the mark instead of the token
-              .build();
-
-            markers.push(circle);
+          if (markerIdsToRemove.length > 0) {
+            // If markers exist, remove them (Toggle Off)
+            await OBR.scene.items.deleteItems(markerIdsToRemove);
+          } else {
+            // If no markers exist, create them (Toggle On)
+            const markers = context.items.map((token) => {
+              return OBR.scene.items.buildShape()
+                .width(token.width)
+                .height(token.height)
+                .shapeType("CIRCLE")
+                .fillColor("#ff0000")
+                .fillOpacity(0.4)
+                .strokeColor("#000000")
+                .strokeWidth(2)
+                .position(token.position)
+                .attachedTo(token.id)
+                .layer("ATTACHMENT")
+                .metadata({ "com.simple.marker/isMarker": true }) // Tag it so we can find it later
+                .disableHit(true) // Make it click-through
+                .build();
+            });
+            await OBR.scene.items.addItems(markers);
           }
-
-          // Add the markers to the map
-          await OBR.scene.items.addItems(markers);
-        },
+        }
       });
     });
   </script>
+</head>
+<body style="background: #222; color: white; font-family: sans-serif; padding: 10px;">
+  <p>Token Marker is running.</p>
 </body>
 </html>
