@@ -1,17 +1,18 @@
+
+
 {
   "name": "Token Marker",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "manifest_version": 1,
   "permissions": ["ITEM_UPDATE", "ITEM_CREATE"],
-  "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
-  "action": {
-    "title": "Mark Token",
-    "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
-    "handler": "https://auldalliance.github.io/owlbear_status_markers/index.html",
-    "popover": "https://auldalliance.github.io/owlbear_status_markers/index.html",
-    "contentType": "contextMenu",
-    "contextMenu": {
-      "itemTypes": ["IMAGE"]
+  "background_items": [
+    {
+      "name": "Marker Background Task",
+      "handler": "https://auldalliance.github.io/owlbear_status_markers/index.html",
     }
+  ],
+  "action": {
+    "title": "Token Marker",
+    "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
   }
 }
