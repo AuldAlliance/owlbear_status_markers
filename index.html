@@ -1,60 +1,45 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <script type="module">
-    import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js";
+OBR.contextMenu.create({
+  id: "com.simple.marker/mark",
+  items: [
+    {
+      id: "mark-token",
+      label: "Mark Token",
+      icon: "https://www.owlbear.rodeo/logo.svg",
+      filter: {
+        every: [{ key: "type", value: "IMAGE" }]
+      },
+      async onClick(context) {
+        const tokenIds = context.items.map(item => item.id);
 
-    OBR.onReady(async () => {
-      OBR.contextMenu.create({
-        id: "com.simple.marker/mark",
-        icons: [
-          {
-            icon: "https://www.owlbear.rodeo/logo.svg",
-            label: "Mark Token",
-            filter: {
-              every: [{ key: "type", value: "IMAGE" }]
-            }
-          }
-        ],
-        async onClick(context) {
-          // 1. Get all existing attachments for the selected tokens
-          const tokenIds = context.items.map(item => item.id);
-          const existingAttachments = await OBR.scene.items.getItemAttachments(tokenIds);
-          
-          // 2. Identify if any of those attachments are our markers
-          const markerIdsToRemove = existingAttachments
-            .filter(item => item.metadata["com.simple.marker/isMarker"])
-            .map(item => item.id);
+        const existingAttachments = await OBR.scene.items.getItemAttachments(tokenIds);
 
-          if (markerIdsToRemove.length > 0) {
-            // If markers exist, remove them (Toggle Off)
-            await OBR.scene.items.deleteItems(markerIdsToRemove);
-          } else {
-            // If no markers exist, create them (Toggle On)
-            const markers = context.items.map((token) => {
-              return OBR.scene.items.buildShape()
-                .width(token.width)
-                .height(token.height)
-                .shapeType("CIRCLE")
-                .fillColor("#ff0000")
-                .fillOpacity(0.4)
-                .strokeColor("#000000")
-                .strokeWidth(2)
-                .position(token.position)
-                .attachedTo(token.id)
-                .layer("ATTACHMENT")
-                .metadata({ "com.simple.marker/isMarker": true }) // Tag it so we can find it later
-                .disableHit(true) // Make it click-through
-                .build();
-            });
-            await OBR.scene.items.addItems(markers);
-          }
+        const markerIdsToRemove = existingAttachments
+          .filter(item => item.metadata["com.simple.marker/isMarker"])
+          .map(item => item.id);
+
+        if (markerIdsToRemove.length > 0) {
+          await OBR.scene.items.deleteItems(markerIdsToRemove);
+        } else {
+          const markers = context.items.map((token) => {
+            return OBR.scene.items.buildShape()
+              .width(token.width)
+              .height(token.height)
+              .shapeType("CIRCLE")
+              .fillColor("#ff0000")
+              .fillOpacity(0.4)
+              .strokeColor("#000000")
+              .strokeWidth(2)
+              .position(token.position)
+              .attachedTo(token.id)
+              .layer("ATTACHMENT")
+              .metadata({ "com.simple.marker/isMarker": true })
+              .disableHit(true)
+              .build();
+          });
+
+          await OBR.scene.items.addItems(markers);
         }
-      });
-    });
-  </script>
-</head>
-<body style="background: #222; color: white; font-family: sans-serif; padding: 10px;">
-  <p>Token Marker is running.</p>
-</body>
-</html>
+      }
+    }
+  ]
+});
