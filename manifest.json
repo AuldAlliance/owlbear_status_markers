@@ -8,6 +8,7 @@
     "title": "Mark Token",
     "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
     "handler": "https://auldalliance.github.io/owlbear_status_markers/index.html",
+    "popover": "https://auldalliance.github.io/owlbear_status_markers/index.html",
     "contentType": "contextMenu",
     "contextMenu": {
       "itemTypes": ["IMAGE"]
