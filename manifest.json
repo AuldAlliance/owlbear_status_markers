@@ -8,5 +8,9 @@
     "title": "Token Marker",
     "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
     "popover": "https://auldalliance.github.io/owlbear_status_markers/index.html"
-  }
+  },
+  "permissions": [
+    "scene:read",
+    "scene:write"
+  ]
 }
