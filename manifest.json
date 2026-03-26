@@ -1,16 +1,11 @@
-
 {
   "name": "Token Marker",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "manifest_version": 1,
-  "background_url": "https://auldalliance.github.io/owlbear_status_markers/index.html",
+  "background_url": "https://auldalliance.github.io/owlbear_status_markers/background.js",
   "action": {
     "title": "Token Marker",
     "icon": "https://auldalliance.github.io/owlbear_status_markers/icon1.svg",
     "popover": "https://auldalliance.github.io/owlbear_status_markers/index.html"
-  },
-  "permissions": [
-    "scene:read",
-    "scene:write"
-  ]
+  }
 }
