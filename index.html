@@ -1,11 +1,38 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <script src="https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Token Marker</title>
+  <style>
+    body {
+      background: #222;
+      color: white;
+      font-family: sans-serif;
+      padding: 15px;
+      text-align: center;
+      margin: 0;
+    }
+    h3 { margin-top: 0; color: #ffbb00; }
+    p { font-size: 0.9em; line-height: 1.4; opacity: 0.8; }
+    .status { font-size: 0.7em; color: #888; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h3>Token Marker</h3>
+  <p>Right-click any character token and select <strong>"Mark Token"</strong> to toggle a red status circle.</p>
+  <div class="status">Extension Active</div>
+
   <script type="module">
-    // Using the global OBR object provided by the script tag above
+    // Import the SDK directly from the CDN
+    import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js";
+
+    const METADATA_KEY = "com.simple.marker/isMarker";
+
     OBR.onReady(() => {
+      console.log("Token Marker Extension Ready");
+
+      // Create the Context Menu Item
       OBR.contextMenu.create({
         id: "com.simple.marker/menu",
         icons: [
@@ -18,54 +45,51 @@
           },
         ],
         async onClick(context) {
-          const tokenIds = context.items.map(item => item.id);
-          
-          // 1. Get ALL items in the scene to find existing markers
-          const allItems = await OBR.scene.items.getItems();
-          
-          // 2. Find markers already attached to these tokens
-          const markerIdsToRemove = allItems
-            .filter(item => 
+          try {
+            const tokenIds = context.items.map(item => item.id);
+            
+            // 1. Fetch all items in the current scene
+            const allItems = await OBR.scene.items.getItems();
+            
+            // 2. Find markers that are currently attached to the selected tokens
+            const markersToRemove = allItems.filter(item => 
               item.attachedTo && 
               tokenIds.includes(item.attachedTo) && 
-              item.metadata?.["com.simple.marker/isMarker"]
-            )
-            .map(item => item.id);
+              item.metadata && 
+              item.metadata[METADATA_KEY] === true
+            ).map(i => i.id);
 
-          if (markerIdsToRemove.length > 0) {
-            // TOGGLE OFF: Delete existing markers
-            await OBR.scene.items.deleteItems(markerIdsToRemove);
-          } else {
-            // TOGGLE ON: Create new markers
-            const markers = context.items.map((token) => {
-              return OBR.scene.items.buildShape()
-                .width(token.width)
-                .height(token.height)
-                .shapeType("CIRCLE")
-                .fillColor("#ff0000")
-                .fillOpacity(0.4)
-                .strokeColor("#000000")
-                .strokeWidth(2)
-                // Use a slight offset or the exact center
-                .position(token.position) 
-                .attachedTo(token.id)
-                .layer("ATTACHMENT")
-                .locked(true) // Keeps it from being dragged off the token
-                .disableHit(true) // Ensures you click the token, not the marker
-                .metadata({ "com.simple.marker/isMarker": true })
-                .build();
-            });
+            if (markersToRemove.length > 0) {
+              // TOGGLE OFF: If markers exist, delete them
+              await OBR.scene.items.deleteItems(markersToRemove);
+            } else {
+              // TOGGLE ON: Create new markers for each selected token
+              const newMarkers = context.items.map((token) => {
+                return OBR.scene.items.buildShape()
+                  .width(token.width)
+                  .height(token.height)
+                  .shapeType("CIRCLE")
+                  .fillColor("#ff0000")
+                  .fillOpacity(0.4)
+                  .strokeColor("#000000")
+                  .strokeWidth(2)
+                  .position(token.position)
+                  .attachedTo(token.id)
+                  .layer("ATTACHMENT")
+                  .locked(true)     // Prevents accidental dragging
+                  .disableHit(true) // Clicks pass through to the token below
+                  .metadata({ [METADATA_KEY]: true })
+                  .build();
+              });
 
-            await OBR.scene.items.addItems(markers);
+              await OBR.scene.items.addItems(newMarkers);
+            }
+          } catch (error) {
+            console.error("Error toggling marker:", error);
           }
         }
       });
     });
   </script>
-</head>
-
-<body style="background:#222;color:white;font-family:sans-serif;padding:10px;text-align:center;">
-  <h3 style="margin-bottom: 5px;">Token Marker</h3>
-  <p style="font-size: 0.8em; opacity: 0.8;">Right-click a token to toggle the marker.</p>
 </body>
 </html>
