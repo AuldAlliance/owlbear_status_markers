@@ -3,52 +3,104 @@
 <head>
   <meta charset="UTF-8" />
   <style>
-    body {
-      background: #222;
-      color: white;
-      font-family: system-ui, -apple-system, sans-serif;
-      padding: 20px;
-      text-align: center;
-      margin: 0;
-    }
-    h3 { margin-top: 0; color: #ffbb00; }
-    p { font-size: 0.9em; opacity: 0.8; margin-bottom: 20px; }
-    button {
-      background: #ff4444;
-      color: white;
-      border: none;
-      padding: 10px 15px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    button:hover { background: #cc0000; }
+    body { background: #1a1a1a; color: white; font-family: monospace; padding: 15px; }
+    .debug-log { background: #000; border: 1px solid #444; padding: 10px; height: 120px; overflow-y: auto; font-size: 11px; color: #0f0; margin-top: 10px; }
+    .status-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: bold; background: #ff4444; margin-bottom: 10px; }
+    .status-pill.online { background: #00c853; }
+    button { background: #444; color: white; border: 1px solid #666; padding: 8px; cursor: pointer; width: 100%; margin-top: 10px; }
+    button:hover { background: #555; }
   </style>
 </head>
 <body>
-  <h3>Token Marker</h3>
-  <p>Right-click a Character token to toggle the red status marker.</p>
+  <div id="connection-status" class="status-pill">OBR OFFLINE</div>
+  <div style="font-size: 14px; font-weight: bold;">Token Marker Debug</div>
+  
+  <div class="debug-log" id="log">Initializing...</div>
   
   <button id="clear-btn">Clear All Markers</button>
 
   <script type="module">
     import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js";
 
+    const logEl = document.getElementById('log');
+    const statusPill = document.getElementById('connection-status');
     const ID = "com.simple.marker";
 
+    function logger(msg) {
+      const time = new Date().toLocaleTimeString().split(' ')[0];
+      logEl.innerHTML += `<div>[${time}] ${msg}</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(`[TokenMarker Debug] ${msg}`);
+    }
+
+    async function setup() {
+      try {
+        logger("OBR.onReady triggered");
+        statusPill.innerText = "OBR ONLINE";
+        statusPill.classList.add("online");
+
+        // Attempt to create the menu
+        logger("Registering Context Menu...");
+        await OBR.contextMenu.create({
+          id: `${ID}/menu`,
+          icons: [{
+            icon: "https://www.owlbear.rodeo/logo.svg",
+            label: "Mark Token",
+            filter: { every: [{ key: "type", value: "IMAGE" }] },
+          }],
+          async onClick(context) {
+            logger(`Menu clicked! Items: ${context.items.length}`);
+            const tokenIds = context.items.map(item => item.id);
+            const allItems = await OBR.scene.items.getItems();
+            
+            const markersToRemove = allItems.filter(item => 
+              item.attachedTo && tokenIds.includes(item.attachedTo) && item.metadata?.[`${ID}/isMarker`]
+            ).map(i => i.id);
+
+            if (markersToRemove.length > 0) {
+              logger(`Removing ${markersToRemove.length} markers`);
+              await OBR.scene.items.deleteItems(markersToRemove);
+            } else {
+              logger(`Adding ${tokenIds.length} markers`);
+              const markers = context.items.map(token => OBR.scene.items.buildShape()
+                .width(token.width).height(token.height).shapeType("CIRCLE")
+                .fillColor("#ff0000").fillOpacity(0.4).position(token.position)
+                .attachedTo(token.id).layer("ATTACHMENT").locked(true).disableHit(true)
+                .metadata({ [`${ID}/isMarker`]: true }).build()
+              );
+              await OBR.scene.items.addItems(markers);
+            }
+          }
+        });
+        logger("Menu Registration Success");
+        OBR.notification.show("Marker Menu Registered!", "SUCCESS");
+
+      } catch (err) {
+        logger(`ERROR: ${err.message}`);
+        console.error(err);
+      }
+    }
+
+    // Logic for the Clear Button
     document.getElementById('clear-btn').onclick = async () => {
+      logger("Manual Clear requested");
       const allItems = await OBR.scene.items.getItems();
-      const markers = allItems
-        .filter(item => item.metadata?.[`${ID}/isMarker`])
-        .map(i => i.id);
-      
+      const markers = allItems.filter(item => item.metadata?.[`${ID}/isMarker`]).map(i => i.id);
       if (markers.length > 0) {
         await OBR.scene.items.deleteItems(markers);
-        alert(`Cleared ${markers.length} markers.`);
+        logger(`Cleared ${markers.length} items`);
       } else {
-        alert("No markers found to clear.");
+        logger("No markers found to clear");
       }
     };
+
+    // Entry point
+    if (OBR.isReady) {
+      logger("OBR already ready");
+      setup();
+    } else {
+      OBR.onReady(() => setup());
+    }
   </script>
 </body>
 </html>
