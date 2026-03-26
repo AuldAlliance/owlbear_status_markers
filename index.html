@@ -1,47 +1,83 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <script src="https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js"></script>
+    <meta charset="UTF-8">
+    <title>Token Marker</title>
+    <style>
+        body { background: #1a1a1a; color: white; font-family: sans-serif; padding: 20px; text-align: center; }
+        .status { font-size: 12px; color: #666; margin-bottom: 10px; }
+        button { background: #ff4444; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; width: 100%; }
+    </style>
 </head>
-<body style="background:#222;color:#0f0;font-family:monospace;padding:20px;">
-  <div id="log">> Initializing...</div>
+<body>
+    <div id="status" class="status">Initializing ESM...</div>
+    <h3>Token Marker</h3>
+    <button id="clear-btn">Clear All Markers</button>
 
-  <script>
-    const log = (m) => document.getElementById('log').innerHTML += `<div>> ${m}</div>`;
-
-    // Force an immediate check
-    async function start() {
-      try {
-        log("Checking OBR availability...");
+    <script type="module">
+        // Using your specific JSDeliver ESM URL
+        import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@latest/+esm";
         
-        // This is the raw handshake
-        OBR.onReady(async () => {
-          log("HANDSHAKE COMPLETE.");
-          
-          await OBR.contextMenu.create({
-            id: "com.simple.marker/menu",
-            icons: [{
-              icon: "https://www.owlbear.rodeo/logo.svg",
-              label: "Mark Token",
-              filter: { every: [{ key: "type", value: "IMAGE" }] }
-            }],
-            async onClick(context) {
-              const markers = context.items.map(t => OBR.scene.items.buildShape()
-                .width(t.width).height(t.height).shapeType("CIRCLE").fillColor("red")
-                .position(t.position).attachedTo(t.id).layer("ATTACHMENT").disableHit(true)
-                .metadata({ isMarker: true }).build());
-              await OBR.scene.items.addItems(markers);
-            }
-          });
-          log("MENU REGISTERED.");
-        });
-      } catch (e) {
-        log("CRITICAL ERROR: " + e.message);
-      }
-    }
+        const ID = "com.auldalliance.stats-linker";
+        const statusEl = document.getElementById('status');
 
-    start();
-  </script>
+        async function init() {
+            try {
+                // Wait for the handshake
+                await OBR.onReady();
+                
+                statusEl.innerText = "Connected to Owlbear";
+                statusEl.style.color = "#00ff00";
+
+                // Register the Context Menu
+                await OBR.contextMenu.create({
+                    id: `${ID}/menu`,
+                    icons: [{
+                        icon: "https://www.owlbear.rodeo/logo.svg",
+                        label: "Mark Token",
+                        filter: { every: [{ key: "type", value: "IMAGE" }] },
+                    }],
+                    async onClick(context) {
+                        const tokenIds = context.items.map(item => item.id);
+                        const allItems = await OBR.scene.items.getItems();
+                        
+                        const markersToRemove = allItems.filter(item => 
+                            item.attachedTo && 
+                            tokenIds.includes(item.attachedTo) && 
+                            item.metadata?.[`${ID}/isMarker`]
+                        ).map(i => i.id);
+
+                        if (markersToRemove.length > 0) {
+                            await OBR.scene.items.deleteItems(markersToRemove);
+                        } else {
+                            const markers = context.items.map(token => {
+                                return OBR.scene.items.buildShape()
+                                    .width(token.width).height(token.height)
+                                    .shapeType("CIRCLE").fillColor("red").fillOpacity(0.4)
+                                    .position(token.position).attachedTo(token.id)
+                                    .layer("ATTACHMENT").disableHit(true)
+                                    .metadata({ [`${ID}/isMarker`]: true })
+                                    .build();
+                            });
+                            await OBR.scene.items.addItems(markers);
+                        }
+                    }
+                });
+
+            } catch (err) {
+                statusEl.innerText = "Connection Failed";
+                console.error("OBR Error:", err);
+            }
+        }
+
+        // Button Logic inside the module
+        document.getElementById('clear-btn').onclick = async () => {
+            const allItems = await OBR.scene.items.getItems();
+            const markers = allItems.filter(item => item.metadata?.[`${ID}/isMarker`]).map(i => i.id);
+            if (markers.length > 0) await OBR.scene.items.deleteItems(markers);
+        };
+
+        init();
+    </script>
 </body>
 </html>
