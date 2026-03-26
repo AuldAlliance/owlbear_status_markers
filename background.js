@@ -3,6 +3,14 @@ import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js";
 const ID = "com.simple.marker";
 
 OBR.onReady(() => {
+
+  // TEST 1: Console Log
+  console.log("Token Marker: Background Script is running!");
+
+  // TEST 2: Visual Notification in Owlbear
+  // This will show a message at the top of the screen for 5 seconds
+  await OBR.notification.show("Token Marker Background Active!", "SUCCESS");
+  
   // Create the context menu item that appears on right-click
   OBR.contextMenu.create({
     id: `${ID}/menu`,
