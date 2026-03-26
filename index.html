@@ -2,94 +2,53 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Token Marker</title>
   <style>
     body {
       background: #222;
       color: white;
-      font-family: sans-serif;
-      padding: 15px;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
       text-align: center;
       margin: 0;
     }
     h3 { margin-top: 0; color: #ffbb00; }
-    p { font-size: 0.9em; line-height: 1.4; opacity: 0.8; }
-    .status { font-size: 0.7em; color: #888; margin-top: 20px; }
+    p { font-size: 0.9em; opacity: 0.8; margin-bottom: 20px; }
+    button {
+      background: #ff4444;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #cc0000; }
   </style>
 </head>
 <body>
   <h3>Token Marker</h3>
-  <p>Right-click any character token and select <strong>"Mark Token"</strong> to toggle a red status circle.</p>
-  <div class="status">Extension Active</div>
+  <p>Right-click a Character token to toggle the red status marker.</p>
+  
+  <button id="clear-btn">Clear All Markers</button>
 
   <script type="module">
-    // Import the SDK directly from the CDN
     import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/obr.js";
 
-    const METADATA_KEY = "com.simple.marker/isMarker";
+    const ID = "com.simple.marker";
 
-    OBR.onReady(() => {
-      console.log("Token Marker Extension Ready");
-
-      // Create the Context Menu Item
-      OBR.contextMenu.create({
-        id: "com.simple.marker/menu",
-        icons: [
-          {
-            icon: "https://www.owlbear.rodeo/logo.svg",
-            label: "Mark Token",
-            filter: {
-              every: [{ key: "type", value: "IMAGE" }],
-            },
-          },
-        ],
-        async onClick(context) {
-          try {
-            const tokenIds = context.items.map(item => item.id);
-            
-            // 1. Fetch all items in the current scene
-            const allItems = await OBR.scene.items.getItems();
-            
-            // 2. Find markers that are currently attached to the selected tokens
-            const markersToRemove = allItems.filter(item => 
-              item.attachedTo && 
-              tokenIds.includes(item.attachedTo) && 
-              item.metadata && 
-              item.metadata[METADATA_KEY] === true
-            ).map(i => i.id);
-
-            if (markersToRemove.length > 0) {
-              // TOGGLE OFF: If markers exist, delete them
-              await OBR.scene.items.deleteItems(markersToRemove);
-            } else {
-              // TOGGLE ON: Create new markers for each selected token
-              const newMarkers = context.items.map((token) => {
-                return OBR.scene.items.buildShape()
-                  .width(token.width)
-                  .height(token.height)
-                  .shapeType("CIRCLE")
-                  .fillColor("#ff0000")
-                  .fillOpacity(0.4)
-                  .strokeColor("#000000")
-                  .strokeWidth(2)
-                  .position(token.position)
-                  .attachedTo(token.id)
-                  .layer("ATTACHMENT")
-                  .locked(true)     // Prevents accidental dragging
-                  .disableHit(true) // Clicks pass through to the token below
-                  .metadata({ [METADATA_KEY]: true })
-                  .build();
-              });
-
-              await OBR.scene.items.addItems(newMarkers);
-            }
-          } catch (error) {
-            console.error("Error toggling marker:", error);
-          }
-        }
-      });
-    });
+    document.getElementById('clear-btn').onclick = async () => {
+      const allItems = await OBR.scene.items.getItems();
+      const markers = allItems
+        .filter(item => item.metadata?.[`${ID}/isMarker`])
+        .map(i => i.id);
+      
+      if (markers.length > 0) {
+        await OBR.scene.items.deleteItems(markers);
+        alert(`Cleared ${markers.length} markers.`);
+      } else {
+        alert("No markers found to clear.");
+      }
+    };
   </script>
 </body>
 </html>
